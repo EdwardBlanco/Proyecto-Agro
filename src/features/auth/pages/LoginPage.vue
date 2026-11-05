@@ -64,7 +64,7 @@ async function submit() {
             <label for="password">Contraseña</label>
             <q-input id="password" v-model="password" outlined dense :type="showPassword ? 'text' : 'password'" autocomplete="current-password">
               <template #prepend><q-icon name="lock_outline" /></template>
-              <template #append><q-icon :name="showPassword ? 'visibility_off' : 'visibility'" class="cursor-pointer" @click="showPassword = !showPassword" /></template>
+              <template #append><q-btn flat round dense type="button" class="password-toggle" :icon="showPassword ? 'visibility_off' : 'visibility'" :aria-label="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'" @click="showPassword = !showPassword" /></template>
             </q-input>
             <div class="login-options">
               <q-checkbox v-model="remember" dense label="Recordarme" />

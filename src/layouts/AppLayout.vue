@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { useAuthStore } from '@/stores/auth'
@@ -11,6 +11,9 @@ const router = useRouter()
 const route = useRoute()
 const $q = useQuasar()
 const sidebarCollapsed = ref(false)
+const mobileDrawerOpen = ref(false)
+const isOnline = ref(navigator.onLine)
+const isCompactViewport = ref(window.innerWidth < 1024)
 const notificationPopover = ref(false)
 const notificationTab = ref('all')
 const links = [
@@ -32,6 +35,29 @@ const groupedLinks = computed(() => visibleLinks.value.reduce((groups, link) => 
   return groups
 }, {}))
 const pageTitle = computed(() => route.meta.title ?? 'SENAgro')
+watch(() => route.fullPath, () => {
+  mobileDrawerOpen.value = false
+})
+function updateNetworkStatus() {
+  isOnline.value = navigator.onLine
+}
+
+function updateViewportStatus() {
+  isCompactViewport.value = window.innerWidth < 1024
+}
+
+onMounted(() => {
+  window.addEventListener('online', updateNetworkStatus)
+  window.addEventListener('offline', updateNetworkStatus)
+  window.addEventListener('resize', updateViewportStatus)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('online', updateNetworkStatus)
+  window.removeEventListener('offline', updateNetworkStatus)
+  window.removeEventListener('resize', updateViewportStatus)
+})
+
 const notifications = computed(() => {
   const farms = auth.currentUser?.farms ?? []
   return getRecords('notifications')
@@ -85,7 +111,7 @@ async function openAllNotifications() {
 
 <template>
   <q-layout view="hHh Lpr fFf" class="app-shell">
-    <q-drawer :model-value="true" behavior="desktop" :mini="sidebarCollapsed" :width="258" :mini-width="72" :mini-to-overlay="false" :class="{ 'side-drawer-mini': sidebarCollapsed }" class="side-drawer">
+    <q-drawer :model-value="isCompactViewport ? mobileDrawerOpen : true" :behavior="isCompactViewport ? 'mobile' : 'desktop'" :mini="sidebarCollapsed && !isCompactViewport" :width="258" :mini-width="72" :mini-to-overlay="false" :class="{ 'side-drawer-mini': sidebarCollapsed && !isCompactViewport }" class="side-drawer" @update:model-value="mobileDrawerOpen = $event">
       <div class="drawer-header-row">
         <span v-if="!sidebarCollapsed" class="nav-heading">GENERAL</span>
         <q-btn flat round dense class="drawer-toggle" :icon="sidebarCollapsed ? 'menu' : 'chevron_left'" :aria-label="sidebarCollapsed ? 'Expandir menú' : 'Contraer menú'" @click="sidebarCollapsed = !sidebarCollapsed">
@@ -122,12 +148,17 @@ async function openAllNotifications() {
     <q-page-container>
       <header class="top-header">
         <q-toolbar class="top-toolbar">
+          <q-btn v-if="isCompactViewport" flat round dense icon="menu" class="mobile-menu-toggle" aria-label="Abrir menú de navegación" @click="mobileDrawerOpen = !mobileDrawerOpen" />
           <div class="header-left">
             <img src="/Logo_SENAgro.png" alt="SENAgro" class="header-logo" />
             <q-separator vertical inset class="header-logo-separator" />
             <div class="page-heading"><strong>{{ pageTitle }}</strong></div>
           </div>
           <q-space />
+          <q-badge class="network-status" :color="isOnline ? 'positive' : 'orange-10'" text-color="white" role="status" :aria-label="isOnline ? 'Conectado a la red' : 'Modo Local Autónomo Activo — Almacenando en caché'">
+            <q-icon :name="isOnline ? 'cloud_done' : 'cloud_off'" class="q-mr-xs" />
+            <span>{{ isOnline ? 'Conectado a la red' : 'Modo Local Autónomo Activo — Almacenando en caché' }}</span>
+          </q-badge>
           <div class="notification-anchor">
             <q-btn flat round dense icon="notifications_none" class="header-icon notification-trigger" aria-label="Notificaciones" :aria-expanded="notificationPopover" @click.stop="notificationPopover = !notificationPopover">
               <q-badge v-if="unreadCount" floating color="negative" rounded>{{ unreadCount }}</q-badge>

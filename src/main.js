@@ -19,9 +19,14 @@ createApp(App)
     plugins: { Notify, Dialog, Loading },
     config: {
       brand: {
-        primary: '#267744',
-        secondary: '#153d2a',
-        accent: '#9abf78'
+        primary: '#2d6a4f',
+        secondary: '#1b4332',
+        accent: '#52b788',
+        dark: '#212529',
+        positive: '#2d6a4f',
+        negative: '#b42318',
+        info: '#245b73',
+        warning: '#8a5700'
       },
       notify: { position: 'top-right', timeout: 2800 }
     }
