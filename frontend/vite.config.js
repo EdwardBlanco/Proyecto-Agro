@@ -1,7 +1,7 @@
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import { quasar } from '@quasar/vite-plugin'
+import { quasar, transformAssetUrls } from '@quasar/vite-plugin'
 
 export default defineConfig({
   server: {
@@ -10,7 +10,9 @@ export default defineConfig({
     strictPort: true
   },
   plugins: [
-    vue(),
+    vue({
+      template: { transformAssetUrls }
+    }),
     quasar({
       sassVariables: fileURLToPath(new URL('./src/css/quasar-variables.sass', import.meta.url))
     })
@@ -19,5 +21,13 @@ export default defineConfig({
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))
     }
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    include: [
+      'src/stores/__tests__/**/*.spec.js',
+      'src/**/__tests__/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
+      'src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}']
   }
 })
