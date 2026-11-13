@@ -22,13 +22,20 @@ const harvests = computed(() => getRecords('harvests').filter((item) => item.cyc
 const nurseries = computed(() => getRecords('nurseries').filter((item) => item.cycleId === cycle.value?.id))
 const canAddRecords = computed(() => canWrite(auth.currentUser, 'activities'))
 const total = computed(() => harvests.value.reduce((sum, item) => sum + harvestKilograms(item), 0))
+
+function formatDate(value) {
+  const date = new Date(`${value}T00:00:00`)
+  return Number.isFinite(date.getTime())
+    ? new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: 'long', year: 'numeric' }).format(date)
+    : value || '—'
+}
 </script>
 
 <template>
   <q-page v-if="cycle" class="page-content cycle-detail-page">
     <q-btn flat no-caps color="primary" icon="arrow_back" label="Volver a ciclos" class="back-link" :to="{ name: 'cycles' }" />
     <div class="page-intro-row cycle-title-row"><div><div class="section-eyebrow">SEGUIMIENTO PRODUCTIVO</div><h1>{{ cycle.name }}</h1><p>{{ crop?.name }} · {{ farm?.name }} / {{ lot?.name }}</p></div><q-badge color="green-1" text-color="green-9" class="status-badge">{{ cycle.status }}</q-badge></div>
-    <div class="cycle-metric-grid"><q-card flat bordered><small>Área sembrada</small><strong>{{ cycle.area }} ha</strong></q-card><q-card flat bordered><small>Meta de producción</small><strong>{{ Number(cycle.target || 0).toLocaleString('es-CO') }} kg</strong></q-card><q-card flat bordered><small>Cosecha acumulada</small><strong>{{ total.toLocaleString('es-CO') }} kg</strong></q-card><q-card flat bordered><small>Fecha de inicio</small><strong>{{ cycle.startDate }}</strong></q-card></div>
+    <div class="cycle-metric-grid"><q-card flat bordered><small>Área sembrada</small><strong>{{ Number(cycle.area).toLocaleString('es-CO', { maximumFractionDigits: 2 }) }} HA</strong></q-card><q-card flat bordered><small>Meta de producción</small><strong>{{ Number(cycle.target || 0).toLocaleString('es-CO') }} kg</strong></q-card><q-card flat bordered><small>Cosecha acumulada</small><strong>{{ total.toLocaleString('es-CO') }} kg</strong></q-card><q-card flat bordered><small>Fecha de inicio</small><strong>{{ formatDate(cycle.startDate) }}</strong></q-card></div>
     <div class="dashboard-columns cycle-panels">
       <q-card flat bordered class="panel-card">
         <q-card-section class="panel-heading">
@@ -40,7 +47,7 @@ const total = computed(() => harvests.value.reduce((sum, item) => sum + harvestK
           <q-item v-for="item in activities" :key="item.id" class="activity-row">
             <q-item-section avatar><q-avatar color="green-1" text-color="primary" :icon="item.kind === 'Labor' ? 'eco' : 'warning_amber'" /></q-item-section>
             <q-item-section><q-item-label>{{ item.type }} · {{ item.kind }}</q-item-label><q-item-label caption>{{ item.description }} · {{ item.responsible }}</q-item-label></q-item-section>
-            <q-item-section side>{{ item.date }}</q-item-section>
+            <q-item-section side>{{ formatDate(item.date) }}</q-item-section>
           </q-item>
         </q-list>
         <div v-else class="small-empty">Este ciclo aún no tiene labores o incidencias.</div>
@@ -53,7 +60,7 @@ const total = computed(() => harvests.value.reduce((sum, item) => sum + harvestK
         <q-list v-if="harvests.length">
           <q-item v-for="item in harvests" :key="item.id">
             <q-item-section avatar><q-icon name="agriculture" color="primary" /></q-item-section>
-            <q-item-section><q-item-label>{{ Number(item.quantity).toLocaleString('es-CO') }} {{ item.unit }} · {{ item.quality }}</q-item-label><q-item-label caption>{{ item.date }}</q-item-label></q-item-section>
+            <q-item-section><q-item-label>{{ Number(item.quantity).toLocaleString('es-CO') }} {{ item.unit }} · {{ item.quality }}</q-item-label><q-item-label caption>{{ formatDate(item.date) }}</q-item-label></q-item-section>
           </q-item>
         </q-list>
         <div v-else class="small-empty">No se han registrado cosechas.</div>

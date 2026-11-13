@@ -23,8 +23,6 @@ const farmPanelFarm = ref(null)
 const farmLotsPanel = ref(false)
 const farmPanelLots = computed(() => getRecords('lots').filter((lot) => lot.farmId === farmPanelFarm.value?.id))
 const search = ref('')
-const farmView = ref('farms')
-const globalLotSearch = ref('')
 const enumFilter = ref('')
 const notificationView = ref('active')
 const telemetryFilters = ref({ farmId: '', lotId: '', variable: '', from: '', to: '' })
@@ -83,6 +81,7 @@ function nameOf(entity, id) {
 
 function displayRow(item) {
   const row = { ...item }
+  if (item.area !== undefined) row.areaLabel = `${formatArea(item.area)} HA`
   if (item.farmId) row.farmName = nameOf('farms', item.farmId)
   if (item.lotId) row.lotName = nameOf('lots', item.lotId)
   if (item.cropId) row.cropName = nameOf('crops', item.cropId)
@@ -107,6 +106,7 @@ function displayRow(item) {
   if (config.value.entity === 'telemetry') {
     row.valueWithUnit = `${item.value} ${item.unit}`
     row.simulatedLabel = 'Simulada'
+    row.dateLabel = formatDateTime(item.date)
   }
   return row
 }
@@ -118,24 +118,6 @@ const rows = computed(() => allRecords.value
 const activeNotificationCount = computed(() => config.value.entity === 'notifications'
   ? allRecords.value.filter((item) => !item.deletedAt && isVisible(item)).length
   : 0)
-const globalLotRows = computed(() => {
-  const query = globalLotSearch.value.trim().toLocaleLowerCase()
-  return getRecords('lots')
-    .filter((lot) => !allowedFarmIds.value || allowedFarmIds.value.includes(lot.farmId))
-    .map((lot) => {
-      const activeCycle = getRecords('cycles').find((cycle) => cycle.lotId === lot.id && cycle.status === 'En curso')
-      const humidity = getRecords('telemetry')
-        .filter((reading) => reading.lotId === lot.id && reading.variable === 'Humedad del suelo')
-        .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())[0]?.value
-      return {
-        ...lot,
-        farmName: nameOf('farms', lot.farmId),
-        cropName: activeCycle ? nameOf('crops', activeCycle.cropId) : 'Sin cultivo activo',
-        latestHumidity: humidity
-      }
-    })
-    .filter((lot) => !query || `${lot.name} ${lot.cropName}`.toLocaleLowerCase().includes(query))
-})
 const filteredRows = computed(() => {
   const query = search.value.trim().toLocaleLowerCase()
   return rows.value.filter((row) => {
@@ -190,7 +172,7 @@ const lotAreaGuidance = computed(() => {
     .reduce((total, lot) => total + Number(lot.area || 0), 0)
   const totalArea = Number(farm.area)
   const availableArea = Math.max(0, totalArea - assignedArea)
-  const enteredArea = Number(form.value.area)
+  const enteredArea = numericValue(form.value.area)
   const hasEnteredArea = form.value.area !== '' && Number.isFinite(enteredArea) && enteredArea > 0
   const percentage = hasEnteredArea && totalArea > 0 ? (enteredArea / totalArea) * 100 : 0
   return {
@@ -202,7 +184,36 @@ const lotAreaGuidance = computed(() => {
 })
 
 function formatArea(value) {
-  return new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 }).format(value)
+  return new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 }).format(numericValue(value) || 0)
+}
+
+function numericValue(value) {
+  return Number(String(value ?? '').replace(',', '.'))
+}
+
+function formatDateTime(value) {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return value || '—'
+  return new Intl.DateTimeFormat('es-CO', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date)
+}
+
+function goBack() {
+  const previous = window.history.state?.back
+  if (typeof previous === 'string' && previous.startsWith('/')) router.back()
+  else router.push({ name: 'dashboard' })
+}
+
+function useImageFallback(event, entity) {
+  const placeholder = entity === 'farms' ? farmPlaceholder : lotPlaceholder
+  if (event.target.dataset.fallbackApplied) return
+  event.target.dataset.fallbackApplied = 'true'
+  event.target.src = placeholder
 }
 
 function statusClass(status) {
@@ -323,11 +334,18 @@ function rejectImage() {
 function validateRelations() {
   const value = form.value
   for (const field of config.value.fields.filter((item) => item.type === 'number' && value[item.key] !== '' && value[item.key] !== null && value[item.key] !== undefined)) {
-    const number = Number(value[field.key])
+    const number = Number(String(value[field.key]).replace(',', '.'))
     if (!Number.isFinite(number)) throw new Error(`${field.label} debe ser un número válido.`)
     if (field.integer && !Number.isInteger(number)) throw new Error(`${field.label} debe ser un número entero.`)
+    if (field.maxLength && String(value[field.key]).length > field.maxLength) throw new Error(`${field.label} no puede superar ${field.maxLength} caracteres.`)
     if (field.min !== undefined && number < field.min) throw new Error(`${field.label} no puede ser menor que ${field.min}.`)
     if (field.max !== undefined && number > field.max) throw new Error(`${field.label} no puede ser mayor que ${field.max}.`)
+  }
+  for (const field of config.value.fields) {
+    const fieldValue = value[field.key]
+    if (field.required && (fieldValue === '' || fieldValue === null || fieldValue === undefined)) throw new Error(`${field.label} es obligatorio.`)
+    if (field.maxLength && fieldValue && String(fieldValue).length > field.maxLength) throw new Error(`${field.label} no puede superar ${field.maxLength} caracteres.`)
+    if (field.textOnly && fieldValue && /\d/.test(fieldValue)) throw new Error(`${field.label} solo puede contener texto.`)
   }
   if (config.value.entity === 'lots' && !getRecord('farms', value.farmId)) throw new Error('Selecciona un predio existente.')
   if (config.value.entity === 'lots') assertFarmAccess(value.farmId)
@@ -338,7 +356,7 @@ function validateRelations() {
     assertFarmAccess(lot.farmId)
     const alreadyUsed = getRecords('cycles').filter((cycle) => cycle.lotId === lot.id && cycle.id !== editing.value).reduce((sum, cycle) => sum + Number(cycle.area || 0), 0)
     const available = Number(lot.area) - alreadyUsed
-    if (Number(value.area) <= 0 || Number(value.area) > available) throw new Error(`El área sembrada debe ser mayor que cero y no superar las ${available} ha disponibles del lote.`)
+    if (numericValue(value.area) <= 0 || numericValue(value.area) > available) throw new Error(`El área sembrada debe ser mayor que cero y no superar las ${formatArea(available)} HA disponibles del lote.`)
   }
   if (config.value.entity === 'activities') {
     const cycle = getRecord('cycles', value.cycleId)
@@ -373,14 +391,18 @@ function validateRelations() {
   if (config.value.entity === 'lots') {
     const farm = getRecord('farms', value.farmId)
     const used = getRecords('lots').filter((lot) => lot.farmId === value.farmId && lot.id !== editing.value).reduce((sum, lot) => sum + Number(lot.area || 0), 0)
-    if (Number(value.area) <= 0 || used + Number(value.area) > Number(farm.area)) throw new Error(`El área del lote debe ser positiva y el área total de lotes no puede superar ${farm.area} ha.`)
+    if (numericValue(value.area) <= 0 || used + numericValue(value.area) > Number(farm.area)) throw new Error(`El área del lote debe ser positiva y el área total de lotes no puede superar ${formatArea(farm.area)} HA.`)
     if (editing.value && value.farmId !== getRecord('lots', editing.value)?.farmId && getRecords('cycles').some((cycle) => cycle.lotId === editing.value)) throw new Error('No se puede cambiar de predio un lote que ya tiene ciclos productivos.')
     const planted = getRecords('cycles').filter((cycle) => cycle.lotId === editing.value).reduce((sum, cycle) => sum + Number(cycle.area || 0), 0)
-    if (planted > Number(value.area)) throw new Error(`El área del lote no puede reducirse por debajo de las ${planted} ha ya sembradas.`)
+    if (planted > numericValue(value.area)) throw new Error(`El área del lote no puede reducirse por debajo de las ${formatArea(planted)} HA ya sembradas.`)
   }
   if (config.value.entity === 'farms') {
+    if (!getRecord('users', value.owner)?.active) throw new Error('Selecciona un responsable activo.')
+    for (const field of config.value.fields.filter((item) => item.textOnly)) {
+      if (value[field.key] && !/^[\p{L}\p{M}\s.'-]+$/u.test(value[field.key])) throw new Error(`${field.label} solo puede contener letras y espacios.`)
+    }
     const occupied = getRecords('lots').filter((lot) => lot.farmId === editing.value).reduce((sum, lot) => sum + Number(lot.area || 0), 0)
-    if (Number(value.area) <= 0 || occupied > Number(value.area)) throw new Error(`El área del predio debe ser positiva y no menor que las ${occupied} ha asignadas a lotes.`)
+    if (numericValue(value.area) <= 0 || occupied > numericValue(value.area)) throw new Error(`El área del predio debe ser positiva y no menor que las ${formatArea(occupied)} HA asignadas a lotes.`)
   }
 }
 
@@ -390,6 +412,9 @@ async function submitForm() {
   try {
     validateRelations()
     const value = { ...form.value }
+    for (const field of config.value.fields.filter((item) => item.type === 'number')) {
+      if (value[field.key] !== '' && value[field.key] !== null && value[field.key] !== undefined) value[field.key] = Number(String(value[field.key]).replace(',', '.'))
+    }
     if (['farms', 'lots'].includes(config.value.entity)) value.image = imageData.value
     if (config.value.entity === 'telemetry') value.simulated = true
     const saved = saveRecord(config.value.entity, { ...value, id: editing.value })
@@ -489,7 +514,7 @@ function markAttended(row) {
 function rowDetails(row) {
   if (config.value.entity === 'farms') {
     return [
-      ['Municipio', row.municipality], ['Departamento', row.department], ['Área total', `${row.area} ha`],
+      ['Municipio', row.municipality], ['Departamento', row.department], ['Área total', `${formatArea(row.area)} HA`],
       ['Responsable', getRecord('users', row.owner)?.name ?? row.owner], ['Estado', row.status],
       ['Usuarios autorizados', getRecords('users').filter((user) => user.farms?.includes(row.id)).map((user) => user.name).join(', ') || 'Sin asignación']
     ]
@@ -523,36 +548,24 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
       </q-breadcrumbs>
       <q-btn flat no-caps color="primary" icon="arrow_back" label="Volver a Predios" :to="{ name: 'farms' }" />
     </div>
+    <q-btn v-else flat no-caps color="primary" icon="arrow_back" label="Volver" class="back-link" @click="goBack" />
     <div class="page-intro-row">
-      <div><div class="section-eyebrow">GESTIÓN DE INFORMACIÓN</div><h1>{{ activeFarm ? `Lotes · ${activeFarm.name}` : config.title }}</h1><p>{{ activeFarm ? `Consulta y administra los lotes de este predio (${activeFarm.area} ha en total).` : config.description }}</p></div>
+      <div><div class="section-eyebrow">GESTIÓN DE INFORMACIÓN</div><h1>{{ activeFarm ? `Lotes · ${activeFarm.name}` : config.title }}</h1><p>{{ activeFarm ? `Consulta y administra los lotes de este predio (${formatArea(activeFarm.area)} HA en total).` : config.entity === 'notifications' && !canEdit ? 'Consulta las notificaciones y su historial.' : config.description }}</p></div>
       <q-btn v-if="canEdit" color="primary" unelevated no-caps icon="add" :label="`${config.entity === 'notifications' ? 'Nueva' : 'Nuevo'} ${config.singular}`" @click="openCreate" />
     </div>
-    <q-tabs
-      v-if="config.entity === 'farms'"
-      v-model="farmView"
-      dense
-      align="left"
-      active-color="primary"
-      indicator-color="primary"
-      class="farm-view-tabs"
-      aria-label="Vistas de predios y lotes"
-    >
-      <q-tab name="farms" label="Mis Fincas" icon="landscape" />
-      <q-tab name="lots" label="Todos los Lotes Globales" icon="grid_view" />
-    </q-tabs>
     <q-tabs v-if="config.entity === 'notifications'" v-model="notificationView" dense align="left" active-color="primary" indicator-color="primary" class="farm-view-tabs" aria-label="Secciones de notificaciones">
       <q-tab name="active" label="Notificaciones" icon="notifications_active" />
       <q-tab name="history" label="Historial" icon="history" />
     </q-tabs>
-    <q-card flat bordered class="records-card">
+    <q-card flat bordered class="records-card" :class="{ 'telemetry-records-card': config.entity === 'telemetry' }">
       <div class="records-toolbar">
         <div class="records-count">
-          <strong>{{ config.entity === 'farms' && farmView === 'lots' ? globalLotRows.length : filteredRows.length }}</strong>
-          {{ config.entity === 'farms' && farmView === 'lots' ? 'lotes' : 'registros' }}
+          <strong>{{ filteredRows.length }}</strong>
+          {{ config.entity === 'lots' ? 'lotes' : 'registros' }}
         </div>
         <q-space />
         <q-btn
-          v-if="config.entity === 'notifications' && notificationView === 'active' && activeNotificationCount"
+          v-if="canEdit && config.entity === 'notifications' && notificationView === 'active' && activeNotificationCount"
           flat
           no-caps
           color="negative"
@@ -560,19 +573,7 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
           label="Borrar todas"
           @click="bulkDeleteDialog = true"
         />
-        <q-input
-          v-if="config.entity === 'farms' && farmView === 'lots'"
-          v-model="globalLotSearch"
-          dense
-          outlined
-          clearable
-          placeholder="Buscar lote o cultivo..."
-          aria-label="Buscar por nombre de lote o cultivo"
-          class="records-search"
-        ><template #prepend><q-icon name="search" /></template></q-input>
-        <q-input
-          v-else
-          v-model="search"
+        <q-input v-model="search"
           dense
           outlined
           clearable
@@ -584,11 +585,11 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
         <q-select v-model="enumFilter" dense outlined clearable emit-value map-options :options="filterField.options.map(option => typeof option === 'string' ? ({ label: option, value: option }) : option)" :placeholder="`Todos · ${filterField.label.toLocaleLowerCase()}`" :aria-label="`Filtrar por ${filterField.label.toLocaleLowerCase()}`" />
       </div>
       <div v-if="config.entity === 'telemetry'" class="telemetry-filter-row">
-        <q-select v-model="telemetryFilters.farmId" dense outlined clearable emit-value map-options :options="telemetryFarmOptions" placeholder="Todos los predios" aria-label="Filtrar por predio" @update:model-value="telemetryFilters.lotId = ''" />
-        <q-select v-model="telemetryFilters.lotId" dense outlined clearable emit-value map-options :options="telemetryLotOptions" placeholder="Todos los lotes" aria-label="Filtrar por lote" />
-        <q-select v-model="telemetryFilters.variable" dense outlined clearable emit-value map-options :options="['Humedad del suelo', 'Temperatura', 'Precipitación', 'Humedad ambiental', 'pH'].map(value => ({ label: value, value }))" placeholder="Todas las variables" aria-label="Filtrar por variable" />
-        <q-input v-model="telemetryFilters.from" type="date" dense outlined aria-label="Fecha desde" />
-        <q-input v-model="telemetryFilters.to" type="date" dense outlined aria-label="Fecha hasta" />
+        <label class="telemetry-filter-item"><span>Limita las lecturas al predio seleccionado.</span><q-select v-model="telemetryFilters.farmId" dense outlined clearable emit-value map-options :options="telemetryFarmOptions" placeholder="Todos los predios" aria-label="Filtrar por predio" @update:model-value="telemetryFilters.lotId = ''" /></label>
+        <label class="telemetry-filter-item"><span>Limita las lecturas al lote seleccionado.</span><q-select v-model="telemetryFilters.lotId" dense outlined clearable emit-value map-options :options="telemetryLotOptions" placeholder="Todos los lotes" aria-label="Filtrar por lote" /></label>
+        <label class="telemetry-filter-item"><span>Selecciona el tipo de medición.</span><q-select v-model="telemetryFilters.variable" dense outlined clearable emit-value map-options :options="['Humedad del suelo', 'Temperatura', 'Precipitación', 'Humedad ambiental', 'pH'].map(value => ({ label: value, value }))" placeholder="Todas las variables" aria-label="Filtrar por variable" /></label>
+        <label class="telemetry-filter-item"><span>Incluye lecturas registradas desde esta fecha.</span><q-input v-model="telemetryFilters.from" type="date" dense outlined aria-label="Fecha desde" /></label>
+        <label class="telemetry-filter-item"><span>Incluye lecturas registradas hasta esta fecha.</span><q-input v-model="telemetryFilters.to" type="date" dense outlined aria-label="Fecha hasta" /></label>
       </div>
       <q-banner v-if="invalidTelemetryRange" dense class="bg-orange-1 text-orange-10">La fecha inicial no puede ser posterior a la fecha final.</q-banner>
       <q-table v-if="!useVisualCards" :rows="filteredRows" :columns="columns" row-key="id" flat :rows-per-page-options="[10, 25, 50]" no-data-label="No hay registros para mostrar">
@@ -597,8 +598,8 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
         </template>
         <template #body-cell-actions="props">
           <q-td :props="props" class="action-cell">
-            <q-btn v-if="config.entity === 'cycles'" flat round dense icon="open_in_new" color="primary" aria-label="Ver detalle" :to="{ name: 'cycle-detail', params: { id: props.row.id } }"><q-tooltip>Ver seguimiento</q-tooltip></q-btn>
-            <q-btn v-else flat round dense icon="visibility" color="grey-7" aria-label="Ver detalle" @click="openDetail(props.row)"><q-tooltip>Ver detalle</q-tooltip></q-btn>
+            <q-btn v-if="config.entity === 'cycles'" flat round dense icon="open_in_new" color="primary" aria-label="Ver seguimiento" :to="{ name: 'cycle-detail', params: { id: props.row.id } }"><q-tooltip>Ver seguimiento</q-tooltip></q-btn>
+            <q-btn v-else-if="config.entity !== 'telemetry'" flat round dense icon="visibility" color="grey-7" aria-label="Ver detalle" @click="openDetail(props.row)"><q-tooltip>Ver detalle</q-tooltip></q-btn>
             <q-btn v-if="canEdit && config.entity === 'notifications' && props.row.status === 'Pendiente'" flat round dense icon="done" color="positive" aria-label="Marcar atendida" @click="markAttended(props.row)"><q-tooltip>Marcar atendida</q-tooltip></q-btn>
             <q-btn v-if="canEdit && !props.row.deletedAt" flat round dense icon="edit" color="primary" aria-label="Editar registro" @click="openEdit(props.row)"><q-tooltip>Editar</q-tooltip></q-btn>
             <q-separator v-if="canEdit && !props.row.deletedAt" vertical class="action-delete-separator" />
@@ -609,36 +610,8 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
           <div class="full-width empty-state table-empty"><q-icon name="inventory_2" /><strong>{{ hasFilters ? 'No encontramos resultados' : 'Todavía no hay registros' }}</strong><span>{{ hasFilters ? 'Prueba con otros términos de búsqueda o filtros.' : 'Cuando agregues información, aparecerá aquí.' }}</span><q-btn v-if="canEdit && !hasFilters" flat no-caps color="primary" :label="`Crear ${config.singular}`" @click="openCreate" /></div>
         </template>
       </q-table>
-      <div v-if="config.entity === 'farms' && farmView === 'lots'" class="row q-col-gutter-md global-lot-grid" aria-label="Todos los lotes">
-        <div v-for="lot in globalLotRows" :key="lot.id" class="col-12 col-sm-6 col-md-4 col-lg-3">
-          <q-card flat bordered class="global-lot-card">
-            <img class="record-card-image" :src="lot.image || lotPlaceholder" :alt="`Imagen de ${lot.name}`" />
-            <div class="global-lot-card-heading">
-              <q-icon name="agriculture" color="primary" />
-              <div><h2>{{ lot.name }}</h2><span>{{ lot.farmName }}</span></div>
-            </div>
-            <div class="global-lot-card-area"><strong>{{ lot.area }}</strong><span>ha</span><q-badge :class="statusClass(lot.status)">{{ lot.status }}</q-badge></div>
-            <div class="global-lot-card-details">
-              <div><span>Cultivo</span><strong>{{ lot.cropName }}</strong></div>
-              <div><span>Humedad del suelo</span><strong>{{ lot.latestHumidity !== undefined ? `${lot.latestHumidity} %` : 'Sin lectura' }}</strong></div>
-              <div><span>Sanidad</span><strong>Sin registro</strong></div>
-            </div>
-            <q-card-actions>
-              <q-btn flat no-caps color="primary" icon="arrow_forward" label="Ver predio" class="arrow-action" :to="{ name: 'lots', query: { farm: lot.farmId } }" />
-            </q-card-actions>
-          </q-card>
-        </div>
-        <div v-if="!globalLotRows.length" class="col-12">
-          <div class="empty-state">
-            <q-icon name="agriculture" />
-            <strong>{{ globalLotSearch ? 'No encontramos lotes' : 'Todavía no hay lotes registrados' }}</strong>
-            <span>{{ globalLotSearch ? 'Prueba con otro nombre de lote o cultivo.' : 'Registra un lote desde la ficha de uno de tus predios.' }}</span>
-            <q-btn v-if="!globalLotSearch" flat no-caps color="primary" icon="landscape" label="Ir a Mis Fincas" @click="farmView = 'farms'" />
-          </div>
-        </div>
-      </div>
-      <div v-else-if="filteredRows.length" class="row q-col-gutter-md record-card-grid" :class="{ 'record-card-grid-always': useVisualCards }" aria-label="Registros">
-        <div v-for="row in filteredRows" :key="row.id" class="col-12 col-sm-6 col-md-4 col-lg-3">
+      <div v-if="filteredRows.length" class="row q-col-gutter-md record-card-grid" :class="{ 'record-card-grid-always': useVisualCards }" aria-label="Registros">
+        <div v-for="row in filteredRows" :key="row.id" :class="config.entity === 'lots' ? 'col-12 col-sm-6 col-md-4' : 'col-12 col-sm-6 col-md-4 col-lg-3'">
           <q-card flat bordered class="record-mobile-card"
           :clickable="config.entity === 'farms'" :aria-label="config.entity === 'farms' ? `Ver detalle del predio ${row.name}` : undefined"
             :role="config.entity === 'farms' ? 'button' : undefined" :tabindex="config.entity === 'farms' ? 0 : undefined"
@@ -648,9 +621,9 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
             @keydown.space.self.prevent>
             <template v-if="config.entity === 'farms'">
               <div class="field-card-visual">
-                <img class="field-card-image" :src="row.image || farmPlaceholder" :alt="`Imagen de ${row.name}`" />
+                <img class="field-card-image" :src="row.image || farmPlaceholder" :alt="`Imagen de ${row.name}`" @error="useImageFallback($event, 'farms')" />
                 <div class="field-card-location"><q-icon name="place" />{{ row.municipality }}, {{ row.department }}</div>
-                <div class="field-card-area"><strong>{{ row.area }}</strong><span>hectáreas</span></div>
+                <div class="field-card-area"><strong>{{ formatArea(row.area) }}</strong><span>HA</span></div>
               </div>
               <q-card-section class="farm-card-summary">
                 <div>
@@ -669,8 +642,8 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
             </template>
             <template v-else>
               <div v-if="config.entity === 'lots'" class="field-card-visual">
-                <img class="field-card-image" :src="row.image || lotPlaceholder" :alt="`Imagen de ${row.name}`" />
-                <div class="field-card-area"><strong>{{ row.area }}</strong><span>hectáreas</span></div>
+                <img class="field-card-image" :src="row.image || lotPlaceholder" :alt="`Imagen de ${row.name}`" @error="useImageFallback($event, 'lots')" />
+                <div class="field-card-area"><strong>{{ formatArea(row.area) }}</strong><span>HA</span></div>
               </div>
               <q-expansion-item expand-separator class="record-card-expansion" @click.stop>
                 <template #header>
@@ -693,7 +666,7 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
                 <q-card-actions class="record-mobile-actions">
                   <div class="record-safe-actions">
                     <q-btn v-if="config.entity === 'cycles'" flat round icon="open_in_new" color="primary" aria-label="Ver detalle" :to="{ name: 'cycle-detail', params: { id: row.id } }" />
-                    <q-btn v-else flat round icon="visibility" color="grey-8" aria-label="Ver detalle" @click="openDetail(row)" />
+                    <q-btn v-else-if="!['lots', 'crops'].includes(config.entity)" flat round icon="visibility" color="grey-8" aria-label="Ver detalle" @click="openDetail(row)" />
                     <q-btn v-if="canEdit && config.entity === 'notifications' && !row.deletedAt && row.status === 'Pendiente'" flat round icon="done" color="positive" aria-label="Marcar atendida" @click="markAttended(row)" />
                     <q-btn v-if="canEdit && !row.deletedAt" flat round icon="edit" color="primary" aria-label="Editar registro" @click="openEdit(row)" />
                   </div>
@@ -722,7 +695,7 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
         <q-card-section class="dialog-heading"><div><h2>{{ editing ? 'Editar' : 'Nuevo' }} {{ config.singular }}</h2><p>Completa la información del registro.</p></div><q-btn v-close-popup flat round dense icon="close" /></q-card-section>
         <q-separator />
         <q-card-section class="dialog-body">
-          <q-form ref="formRef" class="record-form" @submit.prevent="submitForm">
+          <q-form ref="formRef" class="record-form" greedy novalidate @submit.prevent="submitForm">
             <q-stepper v-if="config.entity === 'activities'" v-model="activityStep" flat animated :header-nav="false" class="activity-stepper">
               <q-step v-for="step in activityFieldGroups" :key="step.name" :name="step.name" :title="step.title" :caption="step.caption" :icon="step.name === 1 ? 'landscape' : step.name === 2 ? 'event_note' : 'person'">
                 <div class="activity-step-fields">
@@ -745,11 +718,11 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
                 <RecordFormField v-model="form[field.key]" :field="field" :options="fieldOptions(field)" :disabled="field.key === 'lotId' && !form.farmId" />
                 <div v-if="field.key === 'area' && lotAreaGuidance" class="area-guidance" :class="{ 'area-guidance-over': lotAreaGuidance.exceedsAvailable }">
                   <div class="area-guidance-heading">
-                    <span>{{ formatArea(form.area || 0) }} ha del predio</span>
+                    <span>{{ formatArea(form.area || 0) }} HA del predio</span>
                     <strong>{{ formatArea(lotAreaGuidance.percentage) }}%</strong>
                   </div>
                   <q-linear-progress rounded size="8px" :value="lotAreaGuidance.progress" color="primary" track-color="green-1" />
-                  <span>Disponible para nuevos lotes: {{ formatArea(lotAreaGuidance.availableArea) }} ha</span>
+                  <span>Disponible para nuevos lotes: {{ formatArea(lotAreaGuidance.availableArea) }} HA</span>
                   <span v-if="lotAreaGuidance.exceedsAvailable" class="area-guidance-warning">El área ingresada supera el área disponible de este predio.</span>
                 </div>
               </div>
@@ -759,7 +732,7 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
                   <template #prepend><q-icon name="image" /></template>
                 </q-file>
                 <small class="image-upload-help">Máximo 2 MB. Si no subes una imagen, se mostrará la imagen predeterminada.</small>
-                <img class="form-image-preview" :src="imageData || (config.entity === 'farms' ? farmPlaceholder : lotPlaceholder)" alt="Vista previa de la imagen" />
+                <img class="form-image-preview" :src="imageData || (config.entity === 'farms' ? farmPlaceholder : lotPlaceholder)" alt="Vista previa de la imagen" @error="useImageFallback($event, config.entity)" />
               </div>
               <div class="dialog-actions"><q-btn v-close-popup flat no-caps label="Cancelar" /><q-btn type="submit" color="primary" unelevated no-caps :disable="imageLoading" label="Guardar registro" /></div>
             </template>
@@ -778,7 +751,7 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
           <q-banner rounded class="delete-summary-banner">
             <template #avatar><q-icon name="warning_amber" color="negative" /></template>
             <strong>{{ rowName(pendingDelete) }}</strong>
-            <div>{{ config.entity === 'farms' ? `${pendingDelete?.municipality}, ${pendingDelete?.department} · ${pendingDelete?.area} ha · ${pendingDelete?.lotsCount ?? getRecords('lots').filter(lot => lot.farmId === pendingDelete?.id).length} lotes` : `${nameOf('farms', pendingDelete?.farmId)} · ${pendingDelete?.area} ha · ${pendingDelete?.soilType}` }}</div>
+            <div>{{ config.entity === 'farms' ? `${pendingDelete?.municipality}, ${pendingDelete?.department} · ${formatArea(pendingDelete?.area)} HA · ${pendingDelete?.lotsCount ?? getRecords('lots').filter(lot => lot.farmId === pendingDelete?.id).length} lotes` : `${nameOf('farms', pendingDelete?.farmId)} · ${formatArea(pendingDelete?.area)} HA · ${pendingDelete?.soilType}` }}</div>
             <div>Esta acción no se puede deshacer y puede estar bloqueada si hay registros relacionados.</div>
           </q-banner>
         </q-card-section>
@@ -815,7 +788,7 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
         <q-card-section class="dialog-heading"><div><div class="section-eyebrow">DETALLE</div><h2>{{ selected?.name || selected?.title || selected?.type || config.singular }}</h2></div><q-btn v-close-popup flat round dense icon="close" /></q-card-section>
         <q-separator />
         <template v-if="['farms', 'lots'].includes(config.entity)">
-          <img class="detail-cover-image" :src="selected?.image || (config.entity === 'farms' ? farmPlaceholder : lotPlaceholder)" :alt="`Imagen de ${selected?.name}`" />
+          <img class="detail-cover-image" :src="selected?.image || (config.entity === 'farms' ? farmPlaceholder : lotPlaceholder)" :alt="`Imagen de ${selected?.name}`" @error="useImageFallback($event, config.entity)" />
           <q-card-section class="detail-content">
             <div class="detail-status-row">
               <q-badge :class="statusClass(selected?.status)">{{ selected?.status }}</q-badge>
@@ -842,10 +815,10 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
         <q-separator />
         <q-scroll-area class="farm-lots-panel-scroll">
           <q-card v-for="lot in farmPanelLots" :key="lot.id" flat bordered class="farm-lot-panel-card">
-            <img :src="lot.image || lotPlaceholder" :alt="`Imagen de ${lot.name}`" />
+            <img :src="lot.image || lotPlaceholder" :alt="`Imagen de ${lot.name}`" @error="useImageFallback($event, 'lots')" />
             <div class="farm-lot-panel-copy">
               <div><strong>{{ lot.name }}</strong><q-badge :class="statusClass(lot.status)">{{ lot.status }}</q-badge></div>
-              <span>{{ lot.area }} ha · {{ lot.soilType }}</span>
+              <span>{{ formatArea(lot.area) }} HA · {{ lot.soilType }}</span>
             </div>
           </q-card>
           <div v-if="!farmPanelLots.length" class="empty-state"><q-icon name="agriculture" /><strong>Sin lotes registrados</strong><span>Este predio todavía no tiene lotes asociados.</span></div>

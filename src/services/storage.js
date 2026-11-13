@@ -74,11 +74,11 @@ function readData() {
     parsed.farms = parsed.farms.map((farm) => ({
       ...farm,
       owner: parsed.users.find((user) => user.id === farm.owner || user.name === farm.owner)?.id ?? farm.owner,
-      status: allowedStatuses.includes(farm.status) ? farm.status : 'Activo'
+      status: farm.status === 'En descanso' ? 'En preparación' : allowedStatuses.includes(farm.status) ? farm.status : 'Activo'
     }))
     parsed.lots = parsed.lots.map((lot) => ({
       ...lot,
-      status: allowedStatuses.includes(lot.status) ? lot.status : 'Inactivo'
+      status: lot.status === 'En descanso' ? 'En preparación' : allowedStatuses.includes(lot.status) ? lot.status : 'Inactivo'
     }))
     return parsed
   } catch (error) {
