@@ -27,8 +27,9 @@ Contraseña compartida de demostración: `Agro2026!`
 
 | Rol | Usuario |
 |---|---|
-| Admin | `admin@agrogestion.demo` |
-| SuperAdmin | `superadmin@agrogestion.demo` |
+| Administrador | `admin@agrogestion.demo` |
+| Supervisor | `supervisor@agrogestion.demo` |
+| Agrónomo | `agronomo@agrogestion.demo` |
 | Operario | `operario@agrogestion.demo` |
 
 Son cuentas totalmente ficticias para probar la interfaz; no deben reutilizarse en producción. La contraseña está en el cliente porque no hay servidor de autenticación. Los usuarios que se agregan en el módulo de administración son registros de demostración y no reciben credenciales.
