@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { canAccess } from '@/services/permissions'
 import { harvestKilograms } from '@/services/production'
 import { getRecords } from '@/services/storage'
+import lotPlaceholder from '@/assets/lote-placeholder.svg'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -21,7 +22,7 @@ function farmFor(entity, item) {
 }
 const scoped = (entity) => {
   const items = getRecords(entity)
-  return auth.currentUser?.role === 'Administrador' || auth.currentUser?.role === 'Supervisor'
+  return auth.currentUser?.role === 'SuperAdmin' || auth.currentUser?.role === 'Admin'
     ? items
     : items.filter((item) => !farmFor(entity, item) || farmIds.value.includes(farmFor(entity, item)))
 }
@@ -45,9 +46,9 @@ const weeklyHarvests = computed(() => {
 })
 const weeklyHarvestKilograms = computed(() => weeklyHarvests.value.reduce((sum, item) => sum + harvestKilograms(item), 0))
 const activeUsers = computed(() => getRecords('users').filter((user) => user.active &&
-  (['Administrador', 'Supervisor'].includes(auth.currentUser?.role) ||
+  (['SuperAdmin', 'Admin'].includes(auth.currentUser?.role) ||
     user.farms?.some((farmId) => farmIds.value.includes(farmId)))))
-const notifications = computed(() => scoped('notifications').filter((item) => item.status === 'Pendiente'))
+const notifications = computed(() => scoped('notifications').filter((item) => item.status === 'Pendiente' && !item.deletedAt))
 const totalHarvest = computed(() => harvests.value.reduce((total, item) => total + harvestKilograms(item), 0))
 const weightedHarvests = computed(() => harvests.value.filter((item) => harvestKilograms(item) > 0))
 const quickLinks = [
@@ -108,9 +109,9 @@ function openMetric(metric) {
       </div>
       <div v-if="featuredLots.length" class="field-overview-grid">
         <q-card v-for="lot in featuredLots" :key="lot.id" flat bordered class="field-overview-card">
-          <div class="field-overview-photo"><q-icon name="landscape" /><span>Fotografía no disponible</span></div>
+          <div class="field-overview-photo"><img :src="lot.image || lotPlaceholder" :alt="`Imagen de ${lot.name}`" /><span class="field-overview-photo-label">Lote agrícola</span></div>
           <q-card-section class="field-overview-content">
-            <div class="field-overview-title"><div><span>{{ lot.farmName }}</span><h3>{{ lot.name }}</h3></div><strong>{{ lot.area }} ha</strong></div>
+            <div class="field-overview-title"><div><span>{{ lot.farmName }}</span><h3>{{ lot.name }}</h3></div><div class="field-overview-area"><strong>{{ lot.area }} ha</strong><q-badge :class="lot.status === 'Activo' ? 'status-active' : lot.status === 'Inactivo' ? 'status-inactive' : 'status-preparing'">{{ lot.status }}</q-badge></div></div>
             <p>{{ lot.cropName }}</p>
             <div class="lot-condition-grid">
               <div><q-icon name="water_drop" /><span>Humedad</span><strong>{{ lot.humidity }}</strong></div>

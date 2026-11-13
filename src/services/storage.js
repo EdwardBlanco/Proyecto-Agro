@@ -5,14 +5,14 @@ const revision = ref(0)
 
 const demoData = {
   users: [
-    { id: 'user-admin', name: 'Laura Mendoza', email: 'admin@agrogestion.demo', role: 'Administrador', farms: ['farm-1', 'farm-2'], active: true },
-    { id: 'user-supervisor', name: 'Carlos Ríos', email: 'supervisor@agrogestion.demo', role: 'Supervisor', farms: ['farm-1', 'farm-2'], active: true },
-    { id: 'user-agronomist', name: 'María Torres', email: 'agronomo@agrogestion.demo', role: 'Agrónomo', farms: ['farm-1'], active: true },
+    { id: 'user-admin', name: 'Laura Mendoza', email: 'admin@agrogestion.demo', role: 'Admin', farms: ['farm-1', 'farm-2'], active: true },
+    { id: 'user-supervisor', name: 'Carlos Ríos', email: 'superadmin@agrogestion.demo', role: 'SuperAdmin', farms: ['farm-1', 'farm-2'], active: true },
+    { id: 'user-agronomist', name: 'María Torres', email: 'maria@agrogestion.demo', role: 'Operario', farms: ['farm-1'], active: true },
     { id: 'user-operator', name: 'José Pérez', email: 'operario@agrogestion.demo', role: 'Operario', farms: ['farm-1'], active: true }
   ],
   farms: [
-    { id: 'farm-1', name: 'El Robledal', municipality: 'Rionegro', department: 'Antioquia', area: 24, owner: 'Laura Mendoza' },
-    { id: 'farm-2', name: 'La Esperanza', municipality: 'La Ceja', department: 'Antioquia', area: 18, owner: 'Laura Mendoza' }
+    { id: 'farm-1', name: 'El Robledal', municipality: 'Rionegro', department: 'Antioquia', area: 24, owner: 'user-admin', status: 'Activo' },
+    { id: 'farm-2', name: 'La Esperanza', municipality: 'La Ceja', department: 'Antioquia', area: 18, owner: 'user-admin', status: 'Activo' }
   ],
   lots: [
     { id: 'lot-1', name: 'Lote Norte', farmId: 'farm-1', area: 8, soilType: 'Franco', status: 'Activo' },
@@ -65,6 +65,21 @@ function readData() {
     for (const key of Object.keys(demoData)) {
       if (!Array.isArray(parsed[key])) throw new Error(`Falta la colección local "${key}".`)
     }
+    const legacyRoles = { Administrador: 'Admin', Supervisor: 'SuperAdmin', 'Agrónomo': 'Operario' }
+    parsed.users = parsed.users.map((user) => ({
+      ...user,
+      role: ['SuperAdmin', 'Admin', 'Operario'].includes(user.role) ? user.role : legacyRoles[user.role] ?? 'Operario'
+    }))
+    const allowedStatuses = ['Activo', 'Inactivo', 'En preparación']
+    parsed.farms = parsed.farms.map((farm) => ({
+      ...farm,
+      owner: parsed.users.find((user) => user.id === farm.owner || user.name === farm.owner)?.id ?? farm.owner,
+      status: allowedStatuses.includes(farm.status) ? farm.status : 'Activo'
+    }))
+    parsed.lots = parsed.lots.map((lot) => ({
+      ...lot,
+      status: allowedStatuses.includes(lot.status) ? lot.status : 'Inactivo'
+    }))
     return parsed
   } catch (error) {
     console.error('No fue posible leer los datos locales de SENAgro.', error)
@@ -135,8 +150,7 @@ export function removeRecord(entity, id) {
 export function getDemoAccounts() {
   return [
     { username: 'admin', email: 'admin@agrogestion.demo', password: 'Agro2026!', userId: 'user-admin' },
-    { username: 'supervisor', email: 'supervisor@agrogestion.demo', password: 'Agro2026!', userId: 'user-supervisor' },
-    { username: 'agronomo', email: 'agronomo@agrogestion.demo', password: 'Agro2026!', userId: 'user-agronomist' },
+    { username: 'superadmin', email: 'superadmin@agrogestion.demo', password: 'Agro2026!', userId: 'user-supervisor' },
     { username: 'operario', email: 'operario@agrogestion.demo', password: 'Agro2026!', userId: 'user-operator' }
   ]
 }

@@ -16,6 +16,7 @@ const isOnline = ref(navigator.onLine)
 const isCompactViewport = ref(window.innerWidth < 1024)
 const notificationPopover = ref(false)
 const notificationTab = ref('all')
+const clearNotificationsDialog = ref(false)
 const links = [
   { title: 'Resumen', icon: 'space_dashboard', name: 'dashboard', module: 'dashboard', group: 'GENERAL' },
   { title: 'Predios y lotes', icon: 'landscape', name: 'farms', module: 'farms', group: 'GESTIÓN AGRÍCOLA' },
@@ -62,17 +63,20 @@ const notifications = computed(() => {
   const farms = auth.currentUser?.farms ?? []
   return getRecords('notifications')
     .filter((item) => {
-      if (['Administrador', 'Supervisor'].includes(auth.currentUser?.role)) return true
+      if (['SuperAdmin', 'Admin'].includes(auth.currentUser?.role)) return true
       const farmId = getRecords('lots').find((lot) => lot.id === item.lotId)?.farmId
       return !farmId || farms.includes(farmId)
     })
     .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())
 })
-const isUnread = (notification) => !notification.readAt && notification.status === 'Pendiente'
-const unreadCount = computed(() => notifications.value.filter(isUnread).length)
-const shownNotifications = computed(() => notificationTab.value === 'unread'
-  ? notifications.value.filter(isUnread)
-  : notifications.value)
+const activeNotifications = computed(() => notifications.value.filter((item) => !item.deletedAt))
+const isUnread = (notification) => !notification.deletedAt && !notification.readAt && notification.status === 'Pendiente'
+const unreadCount = computed(() => activeNotifications.value.filter(isUnread).length)
+const shownNotifications = computed(() => notificationTab.value === 'history'
+  ? notifications.value.filter((item) => item.deletedAt)
+  : notificationTab.value === 'unread'
+    ? activeNotifications.value.filter(isUnread)
+    : activeNotifications.value)
 
 function logout() {
   notificationPopover.value = false
@@ -105,6 +109,19 @@ function markNotificationRead(notification) {
 async function openAllNotifications() {
   notificationPopover.value = false
   await router.push({ name: 'notifications' })
+}
+
+function clearAllNotifications() {
+  try {
+    const deletedAt = new Date().toISOString()
+    activeNotifications.value.forEach((notification) => {
+      saveRecord('notifications', { ...notification, deletedAt })
+    })
+    clearNotificationsDialog.value = false
+    $q.notify({ type: 'positive', message: 'Notificaciones movidas al historial.' })
+  } catch (error) {
+    $q.notify({ type: 'negative', message: error.message })
+  }
 }
 
 </script>
@@ -169,6 +186,7 @@ async function openAllNotifications() {
                 <div class="notification-tabs" role="tablist">
                   <button type="button" role="tab" :aria-selected="notificationTab === 'all'" :class="{ active: notificationTab === 'all' }" @click="notificationTab = 'all'">Todas</button>
                   <button type="button" role="tab" :aria-selected="notificationTab === 'unread'" :class="{ active: notificationTab === 'unread' }" @click="notificationTab = 'unread'">No leídas</button>
+                  <button type="button" role="tab" :aria-selected="notificationTab === 'history'" :class="{ active: notificationTab === 'history' }" @click="notificationTab = 'history'">Historial</button>
                 </div>
                 <div class="notification-list">
                   <button v-for="notification in shownNotifications" :key="notification.id" type="button" class="notification-entry" :class="{ unread: isUnread(notification) }" @click="markNotificationRead(notification)">
@@ -176,8 +194,9 @@ async function openAllNotifications() {
                     <span class="notification-entry-copy"><strong>{{ notification.title }}</strong><span>{{ notification.message }}</span><small>{{ relativeTime(notification.date) }}</small></span>
                     <span v-if="isUnread(notification)" class="notification-unread-dot" aria-label="No leída"></span>
                   </button>
-                  <div v-if="!shownNotifications.length" class="notification-empty">No hay notificaciones {{ notificationTab === 'unread' ? 'sin leer' : 'disponibles' }}.</div>
+                  <div v-if="!shownNotifications.length" class="notification-empty">No hay notificaciones {{ notificationTab === 'unread' ? 'sin leer' : notificationTab === 'history' ? 'en el historial' : 'disponibles' }}.</div>
                 </div>
+                <button v-if="activeNotifications.length && notificationTab !== 'history'" type="button" class="notification-clear-all" @click="clearNotificationsDialog = true">Borrar todas</button>
                 <button type="button" class="notification-view-all" @click="openAllNotifications">Ver todo</button>
               </section>
             </q-menu>
@@ -193,5 +212,18 @@ async function openAllNotifications() {
       </header>
       <router-view />
     </q-page-container>
+    <q-dialog v-model="clearNotificationsDialog">
+      <q-card class="notification-confirm-dialog">
+        <q-card-section>
+          <div class="section-eyebrow">CONFIRMAR ACCIÓN</div>
+          <h2>Borrar todas las notificaciones</h2>
+          <p>Se moverán {{ activeNotifications.length }} notificaciones al Historial. Podrás consultarlas después.</p>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat no-caps label="Cancelar" @click="clearNotificationsDialog = false" />
+          <q-btn unelevated no-caps color="negative" label="Borrar todas" @click="clearAllNotifications" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-layout>
 </template>

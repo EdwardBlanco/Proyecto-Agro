@@ -418,7 +418,7 @@ h1, h2, h3, strong { font-family: 'Manrope', sans-serif; }
 
 .login-page { width: 100vw; height: 100vh; min-height: 100vh; display: block; padding: 0; background: #fff; overflow: hidden; }
 .login-panel { width: 100%; height: 100%; min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); background: #fff; border-radius: 0; overflow: hidden; box-shadow: none; }
-.login-story { position: relative; display: flex; flex-direction: column; justify-content: space-between; min-width: 0; padding: 30px 34px; color: #fff; background: linear-gradient(180deg, rgb(10 42 23 / 66%), rgb(9 39 22 / 82%)), url('https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=1400&q=85') center / cover; }
+.login-story { position: relative; display: flex; flex-direction: column; justify-content: space-between; min-width: 0; padding: 30px 34px; color: #fff; background: linear-gradient(180deg, rgb(9 34 19 / 38%), rgb(9 34 19 / 58%)), url('/login-cover.png') center center / cover no-repeat; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .login-logo { display: block; width: min(230px, 100%); height: auto; }
 .brand-light { color: #fff; }
@@ -746,11 +746,15 @@ body { min-width: 0; }
 .field-overview-card { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
 .field-overview-photo { display: flex; min-height: 140px; align-items: center; justify-content: center; gap: 10px; border-bottom: 1px solid #c7d2ca; background: #e6efe9; color: #1b4332; font-size: 13px; }
 .field-overview-photo .q-icon { font-size: 34px; }
+.field-overview-photo { position: relative; overflow: hidden; }
+.field-overview-photo > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.field-overview-photo-label { position: relative; align-self: flex-end; margin: 0 12px 12px auto; padding: 6px 9px; border-radius: 7px; background: rgb(20 43 28 / 72%); color: #fff; font-size: 11px; }
 .field-overview-content { padding: 20px; }
 .field-overview-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .field-overview-title span { color: #607568; font-size: 13px; }
 .field-overview-title h3 { margin: 3px 0 0; font-size: 19px; line-height: 1.3; overflow-wrap: anywhere; }
 .field-overview-title > strong { flex: 0 0 auto; color: #2d6a4f; font-size: 17px; }
+.field-overview-area { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: 7px; }
 .field-overview-content > p { margin: 8px 0 4px; color: #506656; font-size: 14px; }
 .field-overview-empty { display: flex; align-items: center; gap: 12px; padding: 24px; border-radius: 12px; background: #fff; color: #627568; }
 .field-overview-empty > .q-icon { font-size: 24px; color: #2d6a4f; }
@@ -863,9 +867,95 @@ body { min-width: 0; }
     transform: translateY(-3px);
     box-shadow: 0 6px 16px rgb(0 0 0 / 8%);
   }
-  .record-mobile-card:focus-visible { outline: 3px solid #2d6a4f; outline-offset: 3px; }
-  .farm-card-summary > .q-icon, .arrow-action .q-icon { transition: transform .2s ease; }
-  .record-mobile-card:hover .farm-card-summary > .q-icon,
-  .record-mobile-card:focus-visible .farm-card-summary > .q-icon,
-  .arrow-action:hover .q-icon, .arrow-action:focus-visible .q-icon { transform: translateX(4px); }
 }
+
+.login-story {
+  background-position: center center;
+}
+.notification-clear-all {
+  width: 100%;
+  padding: 11px 12px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: #fff;
+  color: #b42318;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.notification-clear-all:hover { background: #fff6f5; }
+.notification-confirm-dialog { width: min(440px, 94vw); border-radius: 14px; }
+.notification-confirm-dialog h2 { margin: 8px 0; font-size: 19px; }
+.notification-confirm-dialog p { margin: 0; color: #66746a; font-size: 13px; line-height: 1.6; }
+.notification-confirm-dialog .q-card__actions { padding: 0 20px 18px; }
+.status-active, .status-inactive, .status-preparing, .status-neutral {
+  padding: 6px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.status-active { background: #e5f4e9 !important; color: #21643b !important; }
+.status-inactive { background: #f0f1f2 !important; color: #525960 !important; }
+.status-preparing { background: #fff1d6 !important; color: #805500 !important; }
+.status-neutral { background: #eaf0f5 !important; color: #39566e !important; }
+.field-card-visual { position: relative; overflow: hidden; min-height: 190px; }
+.field-card-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.field-card-location {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: calc(100% - 130px);
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgb(20 43 28 / 72%);
+  color: #fff;
+  font-size: 12px;
+}
+.field-card-area { z-index: 1; }
+.farm-card-summary { align-items: center; }
+.record-card-image { display: block; width: 100%; height: 145px; object-fit: cover; }
+.global-lot-card { overflow: hidden; }
+.image-upload-field { grid-column: span 2; display: grid; gap: 8px; }
+.image-upload-help { color: #69766d; font-size: 11px; }
+.form-image-preview { display: block; width: 100%; max-height: 210px; border-radius: 9px; object-fit: cover; }
+.detail-dialog { overflow: hidden; }
+.detail-cover-image { display: block; width: 100%; height: 220px; object-fit: cover; }
+.detail-content { display: grid; gap: 20px; padding: 20px 24px 24px; }
+.detail-status-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #647568; font-size: 13px; }
+.detail-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.detail-info-grid > div { min-width: 0; padding: 13px 14px; border: 1px solid #e0e8e1; border-radius: 10px; background: #f8faf8; }
+.detail-info-grid span { display: block; margin-bottom: 5px; color: #718174; font-size: 11px; }
+.detail-info-grid strong { display: block; color: #27382c; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.farm-lots-panel { display: flex; width: min(460px, 100vw); height: 100vh; max-height: 100vh; flex-direction: column; border-radius: 14px 0 0 14px; }
+.farm-lots-panel .dialog-heading { padding: 22px 22px 17px; }
+.farm-lots-panel .dialog-heading h2 { overflow-wrap: anywhere; }
+.farm-lots-panel-scroll { flex: 1 1 auto; min-height: 0; padding: 15px; }
+.farm-lot-panel-card { display: grid; grid-template-columns: 108px minmax(0, 1fr); align-items: center; gap: 13px; margin-bottom: 12px; padding: 9px; border-radius: 11px; }
+.farm-lot-panel-card > img { width: 108px; height: 78px; border-radius: 7px; object-fit: cover; }
+.farm-lot-panel-copy { display: grid; gap: 8px; min-width: 0; }
+.farm-lot-panel-copy > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.farm-lot-panel-copy strong { overflow-wrap: anywhere; }
+.farm-lot-panel-copy > span { color: #69766d; font-size: 12px; }
+.delete-summary-banner { background: #fff6f5; color: #4b2927; line-height: 1.55; }
+.delete-summary-banner strong { display: block; margin-bottom: 5px; color: #271f1e; font-size: 16px; }
+.delete-summary-banner .q-banner__content > div { margin-top: 5px; font-size: 12px; }
+.delete-confirmation-content > p, .delete-confirmation-content > small { color: #69766d; }
+.delete-cancel-button { font-weight: 700; }
+
+@media (max-width: 600px) {
+  .field-card-visual { min-height: 150px; }
+  .detail-cover-image { height: 170px; }
+  .detail-content { padding: 16px; }
+  .detail-info-grid { grid-template-columns: minmax(0, 1fr); }
+  .image-upload-field { grid-column: 1; }
+  .farm-lot-panel-card { grid-template-columns: 84px minmax(0, 1fr); }
+  .farm-lot-panel-card > img { width: 84px; height: 70px; }
+}
+.record-mobile-card:focus-visible { outline: 3px solid #2d6a4f; outline-offset: 3px; }
+.farm-card-summary > .q-icon, .arrow-action .q-icon { transition: transform .2s ease; }
+.record-mobile-card:hover .farm-card-summary > .q-icon,
+.record-mobile-card:focus-visible .farm-card-summary > .q-icon,
+.arrow-action:hover .q-icon, .arrow-action:focus-visible .q-icon { transform: translateX(4px); }

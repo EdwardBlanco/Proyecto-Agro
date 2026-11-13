@@ -1,14 +1,12 @@
 const access = {
-  Administrador: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications', 'users'],
-  Supervisor: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications'],
-  Agrónomo: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications'],
+  SuperAdmin: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications', 'users'],
+  Admin: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications', 'users'],
   Operario: ['dashboard', 'farms', 'lots', 'cycles', 'activities', 'nurseries', 'harvests', 'notifications']
 }
 
 const writeAccess = {
-  Administrador: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications', 'users'],
-  Supervisor: ['cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications'],
-  Agrónomo: ['cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications'],
+  SuperAdmin: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications', 'users'],
+  Admin: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications', 'users'],
   Operario: ['activities', 'nurseries', 'harvests']
 }
 
@@ -21,7 +19,7 @@ export function canWrite(user, module) {
 }
 
 export function visibleFarmIds(user) {
-  return user?.role === 'Administrador' || user?.role === 'Supervisor'
+  return user?.role === 'SuperAdmin' || user?.role === 'Admin'
     ? null
     : user?.farms ?? []
 }

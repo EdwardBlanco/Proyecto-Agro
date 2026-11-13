@@ -11,7 +11,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const cycle = computed(() => {
   const found = getRecord('cycles', route.params.id)
-  if (!found || ['Administrador', 'Supervisor'].includes(auth.currentUser?.role)) return found
+  if (!found || ['SuperAdmin', 'Admin'].includes(auth.currentUser?.role)) return found
   return auth.currentUser?.farms?.includes(found.farmId) ? found : null
 })
 const crop = computed(() => getRecord('crops', cycle.value?.cropId))
