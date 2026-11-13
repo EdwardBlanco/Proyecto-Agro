@@ -3,13 +3,14 @@ const ref = (entity) => ({ entity })
 export const entityConfig = {
   farms: {
     entity: 'farms', singular: 'predio', title: 'Predios y lotes', description: 'Administra tus predios y organiza sus lotes.',
-    columns: [['name', 'Predio'], ['municipality', 'Municipio'], ['department', 'Departamento'], ['area', 'Área (ha)'], ['lotsCount', 'Lotes']],
+    columns: [['name', 'Predio'], ['municipality', 'Municipio'], ['department', 'Departamento'], ['area', 'Área (ha)'], ['status', 'Estado'], ['lotsCount', 'Lotes']],
     fields: [
       { key: 'name', label: 'Nombre del predio', required: true },
       { key: 'municipality', label: 'Municipio', required: true },
       { key: 'department', label: 'Departamento', required: true },
-      { key: 'area', label: 'Área total (ha)', type: 'number', required: true, min: 0.01 },
-      { key: 'owner', label: 'Responsable', required: true }
+      { key: 'area', label: 'Área total (ha)', type: 'number', required: true, min: 1, step: 1, integer: true },
+      { key: 'owner', label: 'Responsable', type: 'users', required: true },
+      { key: 'status', label: 'Estado', type: 'select', options: ['Activo', 'Inactivo', 'En preparación'], required: true }
     ]
   },
   lots: {
@@ -18,9 +19,9 @@ export const entityConfig = {
     fields: [
       { key: 'name', label: 'Nombre del lote', required: true },
       { key: 'farmId', label: 'Predio', type: 'ref', ...ref('farms'), required: true },
-      { key: 'area', label: 'Área disponible (ha)', type: 'number', required: true, min: 0.01 },
+      { key: 'area', label: 'Área disponible (ha)', type: 'number', required: true, min: 1, step: 1, integer: true },
       { key: 'soilType', label: 'Tipo de suelo', required: true },
-      { key: 'status', label: 'Estado', type: 'select', options: ['Activo', 'En descanso', 'Inactivo'], required: true }
+      { key: 'status', label: 'Estado', type: 'select', options: ['Activo', 'Inactivo', 'En preparación'], required: true }
     ]
   },
   crops: {
@@ -128,7 +129,7 @@ export const entityConfig = {
     fields: [
       { key: 'name', label: 'Nombre completo', required: true },
       { key: 'email', label: 'Correo', type: 'email', required: true },
-      { key: 'role', label: 'Rol', type: 'select', options: ['Administrador', 'Supervisor', 'Agrónomo', 'Operario'], required: true },
+      { key: 'role', label: 'Rol', type: 'select', options: ['SuperAdmin', 'Admin', 'Operario'], required: true },
       { key: 'farms', label: 'Predios autorizados', type: 'farms', multiple: true },
       { key: 'active', label: 'Estado', type: 'select-value', options: [{ label: 'Activo', value: true }, { label: 'Inactivo', value: false }], required: true }
     ]

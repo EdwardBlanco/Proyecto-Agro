@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { useAuthStore } from '@/stores/auth'
@@ -7,6 +7,9 @@ import { canWrite, visibleFarmIds } from '@/services/permissions'
 import { getRecord, getRecords, removeRecord, saveRecord } from '@/services/storage'
 import { entityConfig } from '@/features/records/config'
 import RecordFormField from '@/features/records/components/RecordFormField.vue'
+import farmPlaceholder from '@/assets/predio-placeholder.svg'
+import lotPlaceholder from '@/assets/lote-placeholder.svg'
+import { getResponsibleUsers } from '@/services/mock/users'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,15 +19,26 @@ const config = computed(() => entityConfig[String(route.name)])
 const useVisualCards = computed(() => ['farms', 'lots', 'crops', 'inputs'].includes(config.value.entity))
 const activeFarmId = computed(() => config.value.entity === 'lots' && typeof route.query.farm === 'string' ? route.query.farm : '')
 const activeFarm = computed(() => activeFarmId.value ? getRecord('farms', activeFarmId.value) : null)
+const farmPanelFarm = ref(null)
+const farmLotsPanel = ref(false)
+const farmPanelLots = computed(() => getRecords('lots').filter((lot) => lot.farmId === farmPanelFarm.value?.id))
 const search = ref('')
 const farmView = ref('farms')
 const globalLotSearch = ref('')
 const enumFilter = ref('')
+const notificationView = ref('active')
 const telemetryFilters = ref({ farmId: '', lotId: '', variable: '', from: '', to: '' })
 const dialog = ref(false)
 const detailDialog = ref(false)
 const deleteDialog = ref(false)
+const deleteStep = ref(1)
+const deleteReady = ref(false)
+const deleteTimer = ref(null)
 const deleteConfirmationText = ref('')
+const bulkDeleteDialog = ref(false)
+const imageFile = ref(null)
+const imageData = ref('')
+const imageLoading = ref(false)
 const pendingDelete = ref(null)
 const editing = ref(null)
 const selected = ref(null)
@@ -57,7 +71,6 @@ function relatedFarmId(entity, item) {
   if (entity === 'notifications') return getRecord('lots', item.lotId)?.farmId
   return null
 }
-
 function isVisible(item) {
   if (!allowedFarmIds.value) return true
   const farmId = relatedFarmId(config.value.entity, item)
@@ -87,6 +100,10 @@ function displayRow(item) {
     row.farmsLabel = (item.farms ?? []).map((id) => nameOf('farms', id)).join(', ') || 'Sin asignación'
     row.activeLabel = item.active ? 'Activo' : 'Inactivo'
   }
+  if (config.value.entity === 'farms') {
+    const owner = getRecord('users', item.owner)
+    row.ownerName = owner?.name ?? item.owner ?? '—'
+  }
   if (config.value.entity === 'telemetry') {
     row.valueWithUnit = `${item.value} ${item.unit}`
     row.simulatedLabel = 'Simulada'
@@ -94,7 +111,13 @@ function displayRow(item) {
   return row
 }
 
-const rows = computed(() => allRecords.value.filter(isVisible).map(displayRow))
+const rows = computed(() => allRecords.value
+  .filter((item) => config.value.entity !== 'notifications' || (notificationView.value === 'history' ? Boolean(item.deletedAt) : !item.deletedAt))
+  .filter(isVisible)
+  .map(displayRow))
+const activeNotificationCount = computed(() => config.value.entity === 'notifications'
+  ? allRecords.value.filter((item) => !item.deletedAt && isVisible(item)).length
+  : 0)
 const globalLotRows = computed(() => {
   const query = globalLotSearch.value.trim().toLocaleLowerCase()
   return getRecords('lots')
@@ -153,7 +176,7 @@ const relationOptions = (field) => {
 }
 const fieldOptions = (field) => {
   if (field.type === 'ref') return relationOptions(field)
-  if (field.type === 'users') return getRecords('users').map((user) => ({ label: user.name, value: user.id }))
+  if (field.type === 'users') return getResponsibleUsers()
   if (field.type === 'farms') return getRecords('farms').map((farm) => ({ label: farm.name, value: farm.id }))
   return (field.options || []).map((option) => typeof option === 'string' ? ({ label: option, value: option }) : option)
 }
@@ -182,8 +205,18 @@ function formatArea(value) {
   return new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 }).format(value)
 }
 
-function openFarmLots(farm) {
-  router.push({ name: 'lots', query: { farm: farm.id } })
+function statusClass(status) {
+  return {
+    Activo: 'status-active',
+    Inactivo: 'status-inactive',
+    'En preparación': 'status-preparing'
+  }[status] ?? 'status-neutral'
+}
+
+function openFarmLotsPanel(farm) {
+  farmPanelFarm.value = farm
+  detailDialog.value = false
+  farmLotsPanel.value = true
 }
 
 async function advanceActivityStep() {
@@ -204,6 +237,8 @@ watch(() => form.value.farmId, (farmId) => {
 function openCreate() {
   editing.value = null
   activityStep.value = 1
+  imageFile.value = null
+  imageData.value = ''
   const initial = Object.fromEntries(config.value.fields.map((field) => [field.key, field.multiple ? [] : '']))
   if (config.value.entity === 'users') initial.active = true
   if (config.value.entity === 'activities') {
@@ -222,7 +257,11 @@ function openCreate() {
     if (config.value.entity === 'nurseries') initial.cropId = getRecord('cycles', route.query.cycle)?.cropId ?? ''
   }
   if (config.value.entity === 'telemetry') initial.date = new Date().toISOString().slice(0, 16)
-  if (config.value.entity === 'farms') initial.owner = auth.currentUser?.name ?? ''
+  if (config.value.entity === 'farms') {
+    initial.owner = auth.currentUser?.id ?? ''
+    initial.status = 'Activo'
+  }
+  if (config.value.entity === 'lots') initial.status = 'Activo'
   if (config.value.entity === 'lots' && activeFarmId.value) initial.farmId = activeFarmId.value
   form.value = initial
   dialog.value = true
@@ -232,6 +271,8 @@ function openEdit(row) {
   editing.value = row.id
   activityStep.value = 1
   form.value = JSON.parse(JSON.stringify(getRecord(config.value.entity, row.id)))
+  imageFile.value = null
+  imageData.value = form.value.image ?? ''
   dialog.value = true
 }
 
@@ -240,11 +281,51 @@ function openDetail(row) {
   detailDialog.value = true
 }
 
+function loadImage(file) {
+  if (!file) {
+    imageData.value = ''
+    form.value.image = ''
+    return
+  }
+  if (!file.type.startsWith('image/')) {
+    imageFile.value = null
+    $q.notify({ type: 'negative', message: 'Selecciona un archivo de imagen válido.' })
+    return
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    imageFile.value = null
+    $q.notify({ type: 'negative', message: 'La imagen no puede superar 2 MB.' })
+    return
+  }
+  imageLoading.value = true
+  const reader = new FileReader()
+  reader.onload = () => {
+    if (typeof reader.result !== 'string') {
+      imageLoading.value = false
+      $q.notify({ type: 'negative', message: 'No fue posible leer la imagen seleccionada.' })
+      return
+    }
+    imageData.value = reader.result
+    imageLoading.value = false
+  }
+  reader.onerror = () => {
+    imageLoading.value = false
+    $q.notify({ type: 'negative', message: 'No fue posible leer la imagen seleccionada.' })
+  }
+  reader.readAsDataURL(file)
+}
+
+function rejectImage() {
+  imageLoading.value = false
+  $q.notify({ type: 'negative', message: 'La imagen supera el tamaño máximo de 2 MB.' })
+}
+
 function validateRelations() {
   const value = form.value
   for (const field of config.value.fields.filter((item) => item.type === 'number' && value[item.key] !== '' && value[item.key] !== null && value[item.key] !== undefined)) {
     const number = Number(value[field.key])
     if (!Number.isFinite(number)) throw new Error(`${field.label} debe ser un número válido.`)
+    if (field.integer && !Number.isInteger(number)) throw new Error(`${field.label} debe ser un número entero.`)
     if (field.min !== undefined && number < field.min) throw new Error(`${field.label} no puede ser menor que ${field.min}.`)
     if (field.max !== undefined && number > field.max) throw new Error(`${field.label} no puede ser mayor que ${field.max}.`)
   }
@@ -309,6 +390,7 @@ async function submitForm() {
   try {
     validateRelations()
     const value = { ...form.value }
+    if (['farms', 'lots'].includes(config.value.entity)) value.image = imageData.value
     if (config.value.entity === 'telemetry') value.simulated = true
     const saved = saveRecord(config.value.entity, { ...value, id: editing.value })
     if (config.value.entity === 'users' && saved.id === auth.currentUser?.id) {
@@ -334,20 +416,58 @@ function confirmDelete(row) {
   }
   pendingDelete.value = row
   deleteConfirmationText.value = ''
+  deleteStep.value = 1
+  deleteReady.value = false
+  if (deleteTimer.value) clearTimeout(deleteTimer.value)
   deleteDialog.value = true
+}
+
+function continueDelete() {
+  deleteStep.value = 2
+  deleteReady.value = false
+  deleteTimer.value = setTimeout(() => {
+    deleteReady.value = true
+  }, 1400)
+}
+
+function closeDeleteDialog() {
+  deleteDialog.value = false
+  deleteConfirmationText.value = ''
+  deleteStep.value = 1
+  deleteReady.value = false
+  if (deleteTimer.value) clearTimeout(deleteTimer.value)
+  deleteTimer.value = null
 }
 
 function deleteRecord() {
   const expectedName = rowName(pendingDelete.value)
-  if (!pendingDelete.value || deleteConfirmationText.value.trim() !== expectedName) {
+  const requiresName = !['farms', 'lots'].includes(config.value.entity) || deleteStep.value === 2
+  if (!pendingDelete.value || (requiresName && deleteConfirmationText.value.trim() !== expectedName) ||
+      (['farms', 'lots'].includes(config.value.entity) && !deleteReady.value)) {
     $q.notify({ type: 'negative', message: `Escribe exactamente "${expectedName}" para confirmar.` })
     return
   }
   try {
-    removeRecord(config.value.entity, pendingDelete.value.id)
-    deleteDialog.value = false
+    if (config.value.entity === 'notifications') {
+      saveRecord('notifications', { ...pendingDelete.value, deletedAt: new Date().toISOString() })
+    } else {
+      removeRecord(config.value.entity, pendingDelete.value.id)
+    }
+    closeDeleteDialog()
     pendingDelete.value = null
-    $q.notify({ type: 'positive', message: 'Registro eliminado.' })
+    $q.notify({ type: 'positive', message: config.value.entity === 'notifications' ? 'Notificación movida al Historial.' : 'Registro eliminado.' })
+  } catch (error) {
+    $q.notify({ type: 'negative', message: error.message })
+  }
+}
+
+function clearAllNotifications() {
+  try {
+    const active = allRecords.value.filter((item) => !item.deletedAt && isVisible(item))
+    const deletedAt = new Date().toISOString()
+    active.forEach((notification) => saveRecord('notifications', { ...notification, deletedAt }))
+    bulkDeleteDialog.value = false
+    $q.notify({ type: 'positive', message: `${active.length} notificaciones movidas al Historial.` })
   } catch (error) {
     $q.notify({ type: 'negative', message: error.message })
   }
@@ -370,7 +490,8 @@ function rowDetails(row) {
   if (config.value.entity === 'farms') {
     return [
       ['Municipio', row.municipality], ['Departamento', row.department], ['Área total', `${row.area} ha`],
-      ['Responsable', row.owner], ['Usuarios autorizados', getRecords('users').filter((user) => user.farms?.includes(row.id)).map((user) => user.name).join(', ') || 'Sin asignación']
+      ['Responsable', getRecord('users', row.owner)?.name ?? row.owner], ['Estado', row.status],
+      ['Usuarios autorizados', getRecords('users').filter((user) => user.farms?.includes(row.id)).map((user) => user.name).join(', ') || 'Sin asignación']
     ]
   }
   return config.value.fields.map((field) => {
@@ -382,9 +503,14 @@ function rowDetails(row) {
   })
 }
 
+onBeforeUnmount(() => {
+  if (deleteTimer.value) clearTimeout(deleteTimer.value)
+})
+
 watch(() => [route.name, route.query.farm, route.query.cycle], () => {
   search.value = ''
   enumFilter.value = ''
+  notificationView.value = 'active'
 })
 </script>
 
@@ -399,7 +525,7 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
     </div>
     <div class="page-intro-row">
       <div><div class="section-eyebrow">GESTIÓN DE INFORMACIÓN</div><h1>{{ activeFarm ? `Lotes · ${activeFarm.name}` : config.title }}</h1><p>{{ activeFarm ? `Consulta y administra los lotes de este predio (${activeFarm.area} ha en total).` : config.description }}</p></div>
-      <q-btn v-if="canEdit" color="primary" unelevated no-caps icon="add" :label="`Nuevo ${config.singular}`" @click="openCreate" />
+      <q-btn v-if="canEdit" color="primary" unelevated no-caps icon="add" :label="`${config.entity === 'notifications' ? 'Nueva' : 'Nuevo'} ${config.singular}`" @click="openCreate" />
     </div>
     <q-tabs
       v-if="config.entity === 'farms'"
@@ -414,6 +540,10 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
       <q-tab name="farms" label="Mis Fincas" icon="landscape" />
       <q-tab name="lots" label="Todos los Lotes Globales" icon="grid_view" />
     </q-tabs>
+    <q-tabs v-if="config.entity === 'notifications'" v-model="notificationView" dense align="left" active-color="primary" indicator-color="primary" class="farm-view-tabs" aria-label="Secciones de notificaciones">
+      <q-tab name="active" label="Notificaciones" icon="notifications_active" />
+      <q-tab name="history" label="Historial" icon="history" />
+    </q-tabs>
     <q-card flat bordered class="records-card">
       <div class="records-toolbar">
         <div class="records-count">
@@ -421,6 +551,15 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
           {{ config.entity === 'farms' && farmView === 'lots' ? 'lotes' : 'registros' }}
         </div>
         <q-space />
+        <q-btn
+          v-if="config.entity === 'notifications' && notificationView === 'active' && activeNotificationCount"
+          flat
+          no-caps
+          color="negative"
+          icon="delete_sweep"
+          label="Borrar todas"
+          @click="bulkDeleteDialog = true"
+        />
         <q-input
           v-if="config.entity === 'farms' && farmView === 'lots'"
           v-model="globalLotSearch"
@@ -453,14 +592,17 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
       </div>
       <q-banner v-if="invalidTelemetryRange" dense class="bg-orange-1 text-orange-10">La fecha inicial no puede ser posterior a la fecha final.</q-banner>
       <q-table v-if="!useVisualCards" :rows="filteredRows" :columns="columns" row-key="id" flat :rows-per-page-options="[10, 25, 50]" no-data-label="No hay registros para mostrar">
+        <template #body-cell-status="props">
+          <q-td :props="props"><q-badge :class="statusClass(props.value)">{{ props.value }}</q-badge></q-td>
+        </template>
         <template #body-cell-actions="props">
           <q-td :props="props" class="action-cell">
             <q-btn v-if="config.entity === 'cycles'" flat round dense icon="open_in_new" color="primary" aria-label="Ver detalle" :to="{ name: 'cycle-detail', params: { id: props.row.id } }"><q-tooltip>Ver seguimiento</q-tooltip></q-btn>
             <q-btn v-else flat round dense icon="visibility" color="grey-7" aria-label="Ver detalle" @click="openDetail(props.row)"><q-tooltip>Ver detalle</q-tooltip></q-btn>
             <q-btn v-if="canEdit && config.entity === 'notifications' && props.row.status === 'Pendiente'" flat round dense icon="done" color="positive" aria-label="Marcar atendida" @click="markAttended(props.row)"><q-tooltip>Marcar atendida</q-tooltip></q-btn>
-            <q-btn v-if="canEdit" flat round dense icon="edit" color="primary" aria-label="Editar registro" @click="openEdit(props.row)"><q-tooltip>Editar</q-tooltip></q-btn>
-            <q-separator v-if="canEdit" vertical class="action-delete-separator" />
-            <q-btn v-if="canEdit" flat round dense icon="delete_outline" color="negative" aria-label="Eliminar registro" @click="confirmDelete(props.row)"><q-tooltip>Eliminar</q-tooltip></q-btn>
+            <q-btn v-if="canEdit && !props.row.deletedAt" flat round dense icon="edit" color="primary" aria-label="Editar registro" @click="openEdit(props.row)"><q-tooltip>Editar</q-tooltip></q-btn>
+            <q-separator v-if="canEdit && !props.row.deletedAt" vertical class="action-delete-separator" />
+            <q-btn v-if="canEdit && !props.row.deletedAt" flat round dense icon="delete_outline" color="negative" aria-label="Eliminar registro" @click="confirmDelete(props.row)"><q-tooltip>Eliminar</q-tooltip></q-btn>
           </q-td>
         </template>
         <template #no-data>
@@ -470,11 +612,12 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
       <div v-if="config.entity === 'farms' && farmView === 'lots'" class="row q-col-gutter-md global-lot-grid" aria-label="Todos los lotes">
         <div v-for="lot in globalLotRows" :key="lot.id" class="col-12 col-sm-6 col-md-4 col-lg-3">
           <q-card flat bordered class="global-lot-card">
+            <img class="record-card-image" :src="lot.image || lotPlaceholder" :alt="`Imagen de ${lot.name}`" />
             <div class="global-lot-card-heading">
               <q-icon name="agriculture" color="primary" />
               <div><h2>{{ lot.name }}</h2><span>{{ lot.farmName }}</span></div>
             </div>
-            <div class="global-lot-card-area"><strong>{{ lot.area }}</strong><span>ha</span><q-badge color="green-1" text-color="green-10">{{ lot.status }}</q-badge></div>
+            <div class="global-lot-card-area"><strong>{{ lot.area }}</strong><span>ha</span><q-badge :class="statusClass(lot.status)">{{ lot.status }}</q-badge></div>
             <div class="global-lot-card-details">
               <div><span>Cultivo</span><strong>{{ lot.cropName }}</strong></div>
               <div><span>Humedad del suelo</span><strong>{{ lot.latestHumidity !== undefined ? `${lot.latestHumidity} %` : 'Sin lectura' }}</strong></div>
@@ -497,18 +640,16 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
       <div v-else-if="filteredRows.length" class="row q-col-gutter-md record-card-grid" :class="{ 'record-card-grid-always': useVisualCards }" aria-label="Registros">
         <div v-for="row in filteredRows" :key="row.id" class="col-12 col-sm-6 col-md-4 col-lg-3">
           <q-card flat bordered class="record-mobile-card"
-            :clickable="config.entity === 'farms'" :aria-label="config.entity === 'farms' ? `Ver lotes del predio ${row.name}` : undefined"
+          :clickable="config.entity === 'farms'" :aria-label="config.entity === 'farms' ? `Ver detalle del predio ${row.name}` : undefined"
             :role="config.entity === 'farms' ? 'button' : undefined" :tabindex="config.entity === 'farms' ? 0 : undefined"
-            @click="config.entity === 'farms' && openFarmLots(row)"
-            @keyup.enter.self="config.entity === 'farms' && openFarmLots(row)"
-            @keyup.space.self.prevent="config.entity === 'farms' && openFarmLots(row)"
+            @click="config.entity === 'farms' && openDetail(row)"
+            @keyup.enter.self="config.entity === 'farms' && openDetail(row)"
+            @keyup.space.self.prevent="config.entity === 'farms' && openDetail(row)"
             @keydown.space.self.prevent>
             <template v-if="config.entity === 'farms'">
               <div class="field-card-visual">
-                <div class="field-card-illustration">
-                  <q-icon name="landscape" />
-                  <span>{{ row.municipality }}, {{ row.department }}</span>
-                </div>
+                <img class="field-card-image" :src="row.image || farmPlaceholder" :alt="`Imagen de ${row.name}`" />
+                <div class="field-card-location"><q-icon name="place" />{{ row.municipality }}, {{ row.department }}</div>
                 <div class="field-card-area"><strong>{{ row.area }}</strong><span>hectáreas</span></div>
               </div>
               <q-card-section class="farm-card-summary">
@@ -516,10 +657,9 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
                   <h2>{{ row.name }}</h2>
                   <p>{{ row.lotsCount }} {{ row.lotsCount === 1 ? 'lote asociado' : 'lotes asociados' }}</p>
                 </div>
-                <q-icon name="arrow_forward" color="primary" />
+                <q-badge :class="statusClass(row.status)">{{ row.status }}</q-badge>
               </q-card-section>
               <q-card-actions class="record-mobile-actions">
-                <q-btn flat no-caps color="primary" icon="landscape" :label="`Ver ${row.lotsCount} ${row.lotsCount === 1 ? 'lote' : 'lotes'}`" @click.stop="openFarmLots(row)" />
                 <div class="record-safe-actions">
                   <q-btn flat round icon="visibility" color="grey-8" aria-label="Ver detalle" @click.stop="openDetail(row)" />
                   <q-btn v-if="canEdit" flat round icon="edit" color="primary" aria-label="Editar predio" @click.stop="openEdit(row)" />
@@ -529,10 +669,7 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
             </template>
             <template v-else>
               <div v-if="config.entity === 'lots'" class="field-card-visual">
-                <div class="field-card-illustration" aria-label="Fotografía del cultivo no disponible">
-                  <q-icon name="agriculture" />
-                  <span>Fotografía no disponible</span>
-                </div>
+                <img class="field-card-image" :src="row.image || lotPlaceholder" :alt="`Imagen de ${row.name}`" />
                 <div class="field-card-area"><strong>{{ row.area }}</strong><span>hectáreas</span></div>
               </div>
               <q-expansion-item expand-separator class="record-card-expansion" @click.stop>
@@ -541,7 +678,7 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
                     <q-item-label class="record-card-title">{{ rowName(row) }}</q-item-label>
                     <q-item-label caption>{{ config.title }}</q-item-label>
                   </q-item-section>
-                  <q-item-section v-if="row.status" side><q-badge color="green-1" text-color="green-10">{{ row.status }}</q-badge></q-item-section>
+                  <q-item-section v-if="row.status" side><q-badge :class="statusClass(row.status)">{{ row.status }}</q-badge></q-item-section>
                 </template>
                 <q-card-section class="record-mobile-card-fields">
                   <div v-for="[key, label] in config.columns.filter(([key]) => key !== 'name')" :key="key" class="record-mobile-field">
@@ -557,11 +694,11 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
                   <div class="record-safe-actions">
                     <q-btn v-if="config.entity === 'cycles'" flat round icon="open_in_new" color="primary" aria-label="Ver detalle" :to="{ name: 'cycle-detail', params: { id: row.id } }" />
                     <q-btn v-else flat round icon="visibility" color="grey-8" aria-label="Ver detalle" @click="openDetail(row)" />
-                    <q-btn v-if="canEdit && config.entity === 'notifications' && row.status === 'Pendiente'" flat round icon="done" color="positive" aria-label="Marcar atendida" @click="markAttended(row)" />
-                    <q-btn v-if="canEdit" flat round icon="edit" color="primary" aria-label="Editar registro" @click="openEdit(row)" />
+                    <q-btn v-if="canEdit && config.entity === 'notifications' && !row.deletedAt && row.status === 'Pendiente'" flat round icon="done" color="positive" aria-label="Marcar atendida" @click="markAttended(row)" />
+                    <q-btn v-if="canEdit && !row.deletedAt" flat round icon="edit" color="primary" aria-label="Editar registro" @click="openEdit(row)" />
                   </div>
-                  <q-separator v-if="canEdit" vertical />
-                  <q-btn v-if="canEdit" flat round icon="delete_outline" color="negative" aria-label="Eliminar registro" class="delete-action" @click="confirmDelete(row)" />
+                  <q-separator v-if="canEdit && !row.deletedAt" vertical />
+                  <q-btn v-if="canEdit && !row.deletedAt" flat round icon="delete_outline" color="negative" aria-label="Eliminar registro" class="delete-action" @click="confirmDelete(row)" />
                 </q-card-actions>
               </q-expansion-item>
             </template>
@@ -616,7 +753,15 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
                   <span v-if="lotAreaGuidance.exceedsAvailable" class="area-guidance-warning">El área ingresada supera el área disponible de este predio.</span>
                 </div>
               </div>
-              <div class="dialog-actions"><q-btn v-close-popup flat no-caps label="Cancelar" /><q-btn type="submit" color="primary" unelevated no-caps label="Guardar registro" /></div>
+              <div v-if="['farms', 'lots'].includes(config.entity)" class="form-field image-upload-field">
+                <label for="record-image">Imagen (opcional)</label>
+                <q-file id="record-image" v-model="imageFile" outlined dense clearable accept="image/*" max-file-size="2097152" label="Selecciona una imagen" @update:model-value="loadImage" @rejected="rejectImage">
+                  <template #prepend><q-icon name="image" /></template>
+                </q-file>
+                <small class="image-upload-help">Máximo 2 MB. Si no subes una imagen, se mostrará la imagen predeterminada.</small>
+                <img class="form-image-preview" :src="imageData || (config.entity === 'farms' ? farmPlaceholder : lotPlaceholder)" alt="Vista previa de la imagen" />
+              </div>
+              <div class="dialog-actions"><q-btn v-close-popup flat no-caps label="Cancelar" /><q-btn type="submit" color="primary" unelevated no-caps :disable="imageLoading" label="Guardar registro" /></div>
             </template>
           </q-form>
         </q-card-section>
@@ -626,16 +771,41 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
     <q-dialog v-model="deleteDialog" persistent>
       <q-card class="record-dialog delete-dialog">
         <q-card-section class="dialog-heading">
-          <div><div class="section-eyebrow">ACCIÓN IRREVERSIBLE</div><h2>Eliminar {{ config.singular }}</h2><p>Para evitar errores, confirma escribiendo el nombre exacto:</p></div>
-          <q-btn flat round icon="close" aria-label="Cerrar" @click="deleteDialog = false" />
+          <div><div class="section-eyebrow">ACCIÓN IRREVERSIBLE</div><h2>{{ ['farms', 'lots'].includes(config.entity) ? deleteStep === 1 ? `¿Seguro que deseas eliminar este ${config.singular}?` : 'Confirma la eliminación' : 'Confirma la eliminación' }}</h2><p v-if="['farms', 'lots'].includes(config.entity)">{{ deleteStep === 1 ? 'Revisa el resumen antes de continuar.' : 'Escribe el nombre exacto para confirmar.' }}</p><p v-else>Para evitar errores, confirma escribiendo el nombre exacto:</p></div>
+          <q-btn flat round icon="close" aria-label="Cerrar" @click="closeDeleteDialog" />
         </q-card-section>
-        <q-card-section class="delete-confirmation-content">
+        <q-card-section v-if="['farms', 'lots'].includes(config.entity) && deleteStep === 1" class="delete-confirmation-content">
+          <q-banner rounded class="delete-summary-banner">
+            <template #avatar><q-icon name="warning_amber" color="negative" /></template>
+            <strong>{{ rowName(pendingDelete) }}</strong>
+            <div>{{ config.entity === 'farms' ? `${pendingDelete?.municipality}, ${pendingDelete?.department} · ${pendingDelete?.area} ha · ${pendingDelete?.lotsCount ?? getRecords('lots').filter(lot => lot.farmId === pendingDelete?.id).length} lotes` : `${nameOf('farms', pendingDelete?.farmId)} · ${pendingDelete?.area} ha · ${pendingDelete?.soilType}` }}</div>
+            <div>Esta acción no se puede deshacer y puede estar bloqueada si hay registros relacionados.</div>
+          </q-banner>
+        </q-card-section>
+        <q-card-section v-else class="delete-confirmation-content">
           <strong>{{ rowName(pendingDelete) }}</strong>
+          <p v-if="['farms', 'lots'].includes(config.entity)">Confirma que deseas eliminar este {{ config.singular }} escribiendo su nombre.</p>
           <q-input v-model="deleteConfirmationText" outlined autofocus :placeholder="rowName(pendingDelete)" aria-label="Escribe el nombre del registro para confirmar" />
+          <small v-if="['farms', 'lots'].includes(config.entity) && !deleteReady">El botón se habilitará en un momento.</small>
         </q-card-section>
         <q-card-actions align="right" class="delete-dialog-actions">
-          <q-btn flat no-caps label="Cancelar" @click="deleteDialog = false" />
-          <q-btn unelevated no-caps color="negative" icon="delete_outline" label="Eliminar definitivamente" :disable="deleteConfirmationText.trim() !== rowName(pendingDelete)" @click="deleteRecord" />
+          <q-btn flat no-caps label="Cancelar" class="delete-cancel-button" @click="closeDeleteDialog" />
+          <q-btn v-if="['farms', 'lots'].includes(config.entity) && deleteStep === 1" unelevated no-caps color="primary" icon-right="arrow_forward" label="Continuar" @click="continueDelete" />
+          <q-btn v-else unelevated no-caps color="negative" icon="delete_outline" label="Sí, eliminar" :disable="deleteConfirmationText.trim() !== rowName(pendingDelete) || (['farms', 'lots'].includes(config.entity) && !deleteReady)" @click="deleteRecord" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <q-dialog v-model="bulkDeleteDialog">
+      <q-card class="notification-confirm-dialog">
+        <q-card-section>
+          <div class="section-eyebrow">CONFIRMAR ACCIÓN</div>
+          <h2>Borrar todas las notificaciones</h2>
+          <p>{{ activeNotificationCount }} notificaciones se moverán al Historial. No se eliminarán definitivamente.</p>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat no-caps label="Cancelar" @click="bulkDeleteDialog = false" />
+          <q-btn unelevated no-caps color="negative" label="Borrar todas" @click="clearAllNotifications" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -644,8 +814,46 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
       <q-card class="record-dialog detail-dialog">
         <q-card-section class="dialog-heading"><div><div class="section-eyebrow">DETALLE</div><h2>{{ selected?.name || selected?.title || selected?.type || config.singular }}</h2></div><q-btn v-close-popup flat round dense icon="close" /></q-card-section>
         <q-separator />
-        <q-list separator><q-item v-for="[label, value] in rowDetails(selected || {})" :key="label"><q-item-section><q-item-label caption>{{ label }}</q-item-label><q-item-label>{{ value }}</q-item-label></q-item-section></q-item></q-list>
-        <q-card-section v-if="config.entity === 'farms'" class="farm-detail-lots"><strong>Lotes asociados</strong><q-list v-if="getRecords('lots').filter(lot => lot.farmId === selected?.id).length"><q-item v-for="lot in getRecords('lots').filter(lot => lot.farmId === selected?.id)" :key="lot.id"><q-item-section avatar><q-icon name="landscape" color="primary" /></q-item-section><q-item-section>{{ lot.name }}<q-item-label caption>{{ lot.area }} ha · {{ lot.soilType }}</q-item-label></q-item-section></q-item></q-list><p v-else class="small-empty">Este predio aún no tiene lotes.</p><q-btn flat no-caps color="primary" label="Gestionar lotes" :to="{ name: 'lots', query: { farm: selected?.id } }" @click="detailDialog = false" /></q-card-section>
+        <template v-if="['farms', 'lots'].includes(config.entity)">
+          <img class="detail-cover-image" :src="selected?.image || (config.entity === 'farms' ? farmPlaceholder : lotPlaceholder)" :alt="`Imagen de ${selected?.name}`" />
+          <q-card-section class="detail-content">
+            <div class="detail-status-row">
+              <q-badge :class="statusClass(selected?.status)">{{ selected?.status }}</q-badge>
+              <span v-if="config.entity === 'lots'">{{ nameOf('farms', selected?.farmId) }}</span>
+            </div>
+            <div class="detail-info-grid">
+              <div v-for="[label, value] in rowDetails(selected || {})" :key="label">
+                <span>{{ label }}</span><strong>{{ value || '—' }}</strong>
+              </div>
+            </div>
+            <q-btn v-if="config.entity === 'farms'" unelevated no-caps color="primary" icon="grid_view" label="Lotes asociados" @click="openFarmLotsPanel(selected)" />
+          </q-card-section>
+        </template>
+        <q-list v-else separator><q-item v-for="[label, value] in rowDetails(selected || {})" :key="label"><q-item-section><q-item-label caption>{{ label }}</q-item-label><q-item-label>{{ value }}</q-item-label></q-item-section></q-item></q-list>
+      </q-card>
+    </q-dialog>
+
+    <q-dialog v-model="farmLotsPanel" position="right" full-height>
+      <q-card class="farm-lots-panel">
+        <q-card-section class="dialog-heading">
+          <div><div class="section-eyebrow">LOTES DEL PREDIO</div><h2>{{ farmPanelFarm?.name }}</h2><p>{{ farmPanelLots.length }} lotes asociados</p></div>
+          <q-btn flat round dense icon="close" aria-label="Cerrar panel" @click="farmLotsPanel = false" />
+        </q-card-section>
+        <q-separator />
+        <q-scroll-area class="farm-lots-panel-scroll">
+          <q-card v-for="lot in farmPanelLots" :key="lot.id" flat bordered class="farm-lot-panel-card">
+            <img :src="lot.image || lotPlaceholder" :alt="`Imagen de ${lot.name}`" />
+            <div class="farm-lot-panel-copy">
+              <div><strong>{{ lot.name }}</strong><q-badge :class="statusClass(lot.status)">{{ lot.status }}</q-badge></div>
+              <span>{{ lot.area }} ha · {{ lot.soilType }}</span>
+            </div>
+          </q-card>
+          <div v-if="!farmPanelLots.length" class="empty-state"><q-icon name="agriculture" /><strong>Sin lotes registrados</strong><span>Este predio todavía no tiene lotes asociados.</span></div>
+        </q-scroll-area>
+        <q-card-actions align="right">
+          <q-btn flat no-caps label="Cerrar" @click="farmLotsPanel = false" />
+          <q-btn unelevated no-caps color="primary" label="Gestionar lotes" :to="{ name: 'lots', query: { farm: farmPanelFarm?.id } }" @click="farmLotsPanel = false" />
+        </q-card-actions>
       </q-card>
     </q-dialog>
   </q-page>
