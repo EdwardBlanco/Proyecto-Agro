@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { canAccess } from '@/services/permissions'
+import { getRecord } from '@/services/storage'
 import AppLayout from '@/layouts/AppLayout.vue'
 import LoginPage from '@/features/auth/pages/LoginPage.vue'
 import DashboardPage from '@/features/dashboard/pages/DashboardPage.vue'
@@ -40,6 +41,13 @@ router.beforeEach((to) => {
   if (to.meta.requiresAuth && !auth.isAuthenticated) return { name: 'login' }
   if (to.meta.guest && auth.isAuthenticated) return { name: 'dashboard' }
   if (to.meta.module && !canAccess(auth.currentUser, to.meta.module)) return { name: 'dashboard' }
+  if (to.name === 'lots') {
+    const farmId = typeof to.query.farm === 'string' ? to.query.farm : ''
+    const farm = farmId ? getRecord('farms', farmId) : null
+    const isAssigned = auth.currentUser?.role === 'SuperAdmin' || auth.currentUser?.role === 'Admin' ||
+      auth.currentUser?.farms?.includes(farmId)
+    if (!farm || !isAssigned) return { name: 'farms' }
+  }
   return true
 })
 

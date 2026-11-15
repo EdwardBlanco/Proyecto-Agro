@@ -3,23 +3,23 @@ const ref = (entity) => ({ entity })
 export const entityConfig = {
   farms: {
     entity: 'farms', singular: 'predio', title: 'Predios y lotes', description: 'Administra tus predios y organiza sus lotes.',
-    columns: [['name', 'Predio'], ['municipality', 'Municipio'], ['department', 'Departamento'], ['area', 'Área (ha)'], ['status', 'Estado'], ['lotsCount', 'Lotes']],
+    columns: [['name', 'Predio'], ['municipality', 'Municipio'], ['department', 'Departamento'], ['areaLabel', 'Área (HA)'], ['status', 'Estado'], ['lotsCount', 'Lotes']],
     fields: [
-      { key: 'name', label: 'Nombre del predio', required: true },
-      { key: 'municipality', label: 'Municipio', required: true },
-      { key: 'department', label: 'Departamento', required: true },
-      { key: 'area', label: 'Área total (ha)', type: 'number', required: true, min: 1, step: 1, integer: true },
+      { key: 'name', label: 'Nombre del predio', required: true, maxLength: 30 },
+      { key: 'municipality', label: 'Municipio', required: true, maxLength: 30, textOnly: true },
+      { key: 'department', label: 'Departamento', required: true, maxLength: 30, textOnly: true },
+      { key: 'area', label: 'Área total (HA)', type: 'number', required: true, min: 1, maxLength: 10, step: 0.1 },
       { key: 'owner', label: 'Responsable', type: 'users', required: true },
       { key: 'status', label: 'Estado', type: 'select', options: ['Activo', 'Inactivo', 'En preparación'], required: true }
     ]
   },
   lots: {
     entity: 'lots', singular: 'lote', title: 'Lotes', description: 'Lotes y áreas productivas asociadas a cada predio.',
-    columns: [['name', 'Lote'], ['farmName', 'Predio'], ['area', 'Área (ha)'], ['soilType', 'Tipo de suelo'], ['status', 'Estado']],
+    columns: [['name', 'Lote'], ['farmName', 'Predio'], ['areaLabel', 'Área (HA)'], ['soilType', 'Tipo de suelo'], ['status', 'Estado']],
     fields: [
-      { key: 'name', label: 'Nombre del lote', required: true },
+      { key: 'name', label: 'Nombre del lote', required: true, maxLength: 30 },
       { key: 'farmId', label: 'Predio', type: 'ref', ...ref('farms'), required: true },
-      { key: 'area', label: 'Área disponible (ha)', type: 'number', required: true, min: 1, step: 1, integer: true },
+      { key: 'area', label: 'Área disponible (HA)', type: 'number', required: true, min: 1, maxLength: 10, step: 0.1 },
       { key: 'soilType', label: 'Tipo de suelo', required: true },
       { key: 'status', label: 'Estado', type: 'select', options: ['Activo', 'Inactivo', 'En preparación'], required: true }
     ]
@@ -48,14 +48,14 @@ export const entityConfig = {
   },
   cycles: {
     entity: 'cycles', singular: 'ciclo productivo', title: 'Ciclos productivos', description: 'Sigue la evolución de cada cultivo desde la siembra hasta la cosecha.',
-    columns: [['name', 'Ciclo'], ['farmName', 'Predio'], ['lotName', 'Lote'], ['cropName', 'Cultivo'], ['startDate', 'Inicio'], ['area', 'Área (ha)'], ['status', 'Estado']],
+    columns: [['name', 'Ciclo'], ['farmName', 'Predio'], ['lotName', 'Lote'], ['cropName', 'Cultivo'], ['startDate', 'Inicio'], ['areaLabel', 'Área (HA)'], ['status', 'Estado']],
     fields: [
       { key: 'name', label: 'Nombre del ciclo', required: true },
       { key: 'farmId', label: 'Predio', type: 'ref', ...ref('farms'), required: true },
       { key: 'lotId', label: 'Lote', type: 'ref', ...ref('lots'), required: true },
       { key: 'cropId', label: 'Cultivo', type: 'ref', ...ref('crops'), required: true },
       { key: 'startDate', label: 'Fecha de inicio', type: 'date', required: true },
-      { key: 'area', label: 'Área sembrada (ha)', type: 'number', required: true, min: 0.01 },
+      { key: 'area', label: 'Área sembrada (HA)', type: 'number', required: true, min: 0.01 },
       { key: 'target', label: 'Meta de producción (kg)', type: 'number', min: 0 },
       { key: 'status', label: 'Estado del ciclo', type: 'select', options: ['Planeado', 'En curso', 'Finalizado', 'Suspendido'], required: true }
     ]
@@ -102,7 +102,7 @@ export const entityConfig = {
   },
   telemetry: {
     entity: 'telemetry', singular: 'lectura', title: 'Telemetría e IoT', description: 'Historial demostrativo de lecturas. No hay sensores reales conectados.',
-    columns: [['farmName', 'Predio'], ['lotName', 'Lote'], ['variable', 'Variable'], ['valueWithUnit', 'Lectura'], ['date', 'Fecha'], ['simulatedLabel', 'Origen']],
+    columns: [['farmName', 'Predio'], ['lotName', 'Lote'], ['variable', 'Variable'], ['valueWithUnit', 'Lectura'], ['dateLabel', 'Fecha y hora'], ['simulatedLabel', 'Origen']],
     fields: [
       { key: 'farmId', label: 'Predio', type: 'ref', ...ref('farms'), required: true },
       { key: 'lotId', label: 'Lote', type: 'ref', ...ref('lots'), required: true },
@@ -127,7 +127,7 @@ export const entityConfig = {
     entity: 'users', singular: 'usuario', title: 'Usuarios y permisos', description: 'Administra cuentas locales de demostración y su acceso a predios.',
     columns: [['name', 'Nombre'], ['email', 'Correo'], ['role', 'Rol'], ['farmsLabel', 'Predios asignados'], ['activeLabel', 'Estado']],
     fields: [
-      { key: 'name', label: 'Nombre completo', required: true },
+      { key: 'name', label: 'Nombre completo', required: true, maxLength: 40 },
       { key: 'email', label: 'Correo', type: 'email', required: true },
       { key: 'role', label: 'Rol', type: 'select', options: ['SuperAdmin', 'Admin', 'Operario'], required: true },
       { key: 'farms', label: 'Predios autorizados', type: 'farms', multiple: true },

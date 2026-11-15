@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { useAuthStore } from '@/stores/auth'
-import { canAccess } from '@/services/permissions'
+import { canAccess, canWrite } from '@/services/permissions'
 import { getRecords, saveRecord } from '@/services/storage'
 
 const auth = useAuthStore()
@@ -172,7 +172,7 @@ function clearAllNotifications() {
             <div class="page-heading"><strong>{{ pageTitle }}</strong></div>
           </div>
           <q-space />
-          <q-badge class="network-status" :color="isOnline ? 'positive' : 'orange-10'" text-color="white" role="status" :aria-label="isOnline ? 'Conectado a la red' : 'Modo Local Autónomo Activo — Almacenando en caché'">
+          <q-badge class="network-status" :color="isOnline ? 'grey-2' : 'orange-1'" :text-color="isOnline ? 'grey-8' : 'orange-10'" role="status" :aria-label="isOnline ? 'Conectado a la red' : 'Modo Local Autónomo Activo — Almacenando en caché'">
             <q-icon :name="isOnline ? 'cloud_done' : 'cloud_off'" class="q-mr-xs" />
             <span>{{ isOnline ? 'Conectado a la red' : 'Modo Local Autónomo Activo — Almacenando en caché' }}</span>
           </q-badge>
@@ -196,7 +196,7 @@ function clearAllNotifications() {
                   </button>
                   <div v-if="!shownNotifications.length" class="notification-empty">No hay notificaciones {{ notificationTab === 'unread' ? 'sin leer' : notificationTab === 'history' ? 'en el historial' : 'disponibles' }}.</div>
                 </div>
-                <button v-if="activeNotifications.length && notificationTab !== 'history'" type="button" class="notification-clear-all" @click="clearNotificationsDialog = true">Borrar todas</button>
+                <button v-if="canWrite(auth.currentUser, 'notifications') && activeNotifications.length && notificationTab !== 'history'" type="button" class="notification-clear-all" @click="clearNotificationsDialog = true">Borrar todas</button>
                 <button type="button" class="notification-view-all" @click="openAllNotifications">Ver todo</button>
               </section>
             </q-menu>
