@@ -12,7 +12,7 @@ const config = {
   port: parseInt(process.env.PORT, 10) || 3000,
   nodeEnv: process.env.NODE_ENV || 'development',
   mongoUri: process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/agro_db',
-  corsOrigin: process.env.CORS_ORIGIN || '*',
+  corsOrigin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3000'],
   jwtSecret: process.env.JWT_SECRET || process.env.SECRETORPRIVATEKEY || 'default_jwt_secret',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '4h'
 };

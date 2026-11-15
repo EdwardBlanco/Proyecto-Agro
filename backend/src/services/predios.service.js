@@ -39,12 +39,17 @@ export const listarPredios = async ({ estado, q, page = 1, limit = 10 } = {}) =>
   const skip = (pageNum - 1) * limitNum;
 
   const [predios, total] = await Promise.all([
-    Predio.find(query).sort({ created_at: -1 }).skip(skip).limit(limitNum),
+    Predio.find(query)
+      .select('-__v')
+      .sort({ created_at: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .lean(),
     Predio.countDocuments(query)
   ]);
 
   return {
-    predios: predios.map((p) => p.toJSON()),
+    predios: predios,
     total,
     page: pageNum,
     limit: limitNum,
