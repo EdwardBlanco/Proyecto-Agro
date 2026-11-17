@@ -21,10 +21,10 @@ async function submit() {
   }
   busy.value = true
   try {
-    auth.login(email.value, password.value, remember.value)
+    await auth.login(email.value, password.value, remember.value)
     await router.push('/')
   } catch (error) {
-    $q.notify({ type: 'negative', message: error.message })
+    $q.notify({ type: 'negative', message: error.message || 'No fue posible iniciar sesión.' })
   } finally {
     busy.value = false
   }

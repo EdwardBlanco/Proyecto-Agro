@@ -111,6 +111,15 @@ export function getRecord(entity, id) {
   return getRecords(entity).find((record) => record.id === id) ?? null
 }
 
+export function setRecords(entity, records) {
+  const data = readData()
+  data[entity] = Array.isArray(records) ? records : []
+  writeData(data)
+  return data[entity]
+}
+
+export const replaceRecords = setRecords
+
 export function saveRecord(entity, record) {
   const data = readData()
   const records = data[entity] ?? []

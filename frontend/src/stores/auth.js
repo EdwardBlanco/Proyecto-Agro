@@ -1,21 +1,47 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { getDemoAccounts, getRecords } from '@/services/storage'
+import { apiGet, apiPost, clearAuthToken, getAuthToken, setAuthToken, TOKEN_KEY } from '@/services/api'
+import { mapBackendUserToFrontend, normalizeLoginEmail } from '@/services/mappers'
+import { getRecords } from '@/services/storage'
 
-const SESSION_KEY = 'agrogestion.session.v1'
+export const SESSION_KEY = 'agrogestion.session.v1'
 
 export const useAuthStore = defineStore('auth', () => {
   const currentUser = ref(null)
   const ready = ref(false)
 
-  function restore() {
-    if (ready.value) return
+  function persistSession(user, token, remember = true) {
+    const resolvedToken = token || getAuthToken() || undefined
+    const payload = JSON.stringify({
+      ...(resolvedToken ? { token: resolvedToken } : {}),
+      userId: user.id,
+      user
+    })
+    if (remember) {
+      localStorage.setItem(SESSION_KEY, payload)
+      sessionStorage.removeItem(SESSION_KEY)
+    } else {
+      sessionStorage.setItem(SESSION_KEY, payload)
+      localStorage.removeItem(SESSION_KEY)
+    }
+  }
+
+  async function restore(forceVerify = false) {
+    if (ready.value && !forceVerify) return currentUser.value
+
+    const wasRemembered = Boolean(
+      localStorage.getItem(SESSION_KEY) || localStorage.getItem(TOKEN_KEY)
+    )
+
     try {
       const raw = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY)
       if (raw) {
         const session = JSON.parse(raw)
-        currentUser.value = getRecords('users').find((user) => user.id === session.userId) ?? null
-        if (!currentUser.value) {
+        const storedUser = session?.user
+          ? mapBackendUserToFrontend(session.user)
+          : getRecords('users').find((user) => user.id === session?.userId) ?? null
+        currentUser.value = storedUser && storedUser.active !== false ? storedUser : null
+        if (!currentUser.value && !getAuthToken()) {
           localStorage.removeItem(SESSION_KEY)
           sessionStorage.removeItem(SESSION_KEY)
         }
@@ -26,30 +52,66 @@ export const useAuthStore = defineStore('auth', () => {
       sessionStorage.removeItem(SESSION_KEY)
     }
     ready.value = true
+
+    const token = getAuthToken()
+    if (token) {
+      try {
+        const remoteUser = await apiGet('/auth/me')
+        if (remoteUser) {
+          const mappedUser = mapBackendUserToFrontend(remoteUser)
+          if (!mappedUser || !mappedUser.active) {
+            logout()
+            return null
+          }
+          currentUser.value = mappedUser
+          persistSession(mappedUser, token, wasRemembered)
+        }
+      } catch (error) {
+        if (error?.status === 401 || error?.status === 403) {
+          logout()
+          return null
+        }
+      }
+    }
+
+    return currentUser.value
   }
 
-  function login(identifier, password, remember) {
-    const account = getDemoAccounts().find((item) =>
-      [item.email, item.username].some((value) => value.toLowerCase() === identifier.trim().toLowerCase()) && item.password === password
-    )
-    if (!account) throw new Error('Usuario o contraseña incorrectos. Usa una cuenta de demostración.')
-    const user = getRecords('users').find((item) => item.id === account.userId && item.active)
-    if (!user) throw new Error('La cuenta no está disponible. Contacta al administrador.')
-    if (remember) localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: user.id }))
-    else sessionStorage.setItem(SESSION_KEY, JSON.stringify({ userId: user.id }))
-    if (remember) sessionStorage.removeItem(SESSION_KEY)
-    else localStorage.removeItem(SESSION_KEY)
-    currentUser.value = user
+  async function login(identifier, password, remember = true) {
+    const cleanIdentifier = String(identifier ?? '').trim()
+    if (!cleanIdentifier || !password) {
+      throw new Error('Ingresa tu usuario y contraseña.')
+    }
+
+    const correo = normalizeLoginEmail(cleanIdentifier)
+    const data = await apiPost('/auth/login', {
+      correo,
+      contrasena: password
+    })
+
+    const rawUser = data?.usuario ?? data?.user ?? data
+    const token = data?.token ?? null
+    const mappedUser = mapBackendUserToFrontend(rawUser)
+
+    if (!mappedUser || !mappedUser.active) {
+      throw new Error('La cuenta no está disponible. Contacta al administrador.')
+    }
+
+    const rememberSession = Boolean(remember)
+    setAuthToken(token, rememberSession)
+    persistSession(mappedUser, token, rememberSession)
+    currentUser.value = mappedUser
     ready.value = true
-    return user
+    return mappedUser
   }
 
   function logout() {
     currentUser.value = null
     localStorage.removeItem(SESSION_KEY)
     sessionStorage.removeItem(SESSION_KEY)
+    clearAuthToken()
   }
 
   const isAuthenticated = computed(() => Boolean(currentUser.value))
-  return { currentUser, isAuthenticated, restore, login, logout }
+  return { currentUser, ready, isAuthenticated, restore, login, logout }
 })
