@@ -1,3 +1,10 @@
+/**
+ * Suite de pruebas unitarias para el cliente HTTP base (src/services/api.js).
+ * Valida la gestión de tokens JWT en localStorage/sessionStorage (incluido el
+ * respaldo compartido con src/stores/auth.js mediante agrogestion.session.v1),
+ * la inyección automática de la cabecera Authorization, el desempaquetado de
+ * respuestas del backend, la normalización de errores y el endpoint /health.
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   API_BASE_URL,
@@ -13,6 +20,7 @@ import {
 } from '../api'
 
 describe('Servicio HTTP Base (api.js)', () => {
+  // Limpia el almacenamiento del navegador y restaura mocks entre pruebas para aislar cada caso
   beforeEach(() => {
     localStorage.clear()
     sessionStorage.clear()
@@ -25,6 +33,7 @@ describe('Servicio HTTP Base (api.js)', () => {
     vi.unstubAllGlobals()
   })
 
+  // Flujo de almacenamiento y recuperación del token JWT usado por auth.js y apiRequest()
   describe('Gestión de token de autenticación', () => {
     it('almacena el token en localStorage cuando remember es true y lo recupera', () => {
       setAuthToken('jwt-token-local', true)
@@ -40,6 +49,7 @@ describe('Servicio HTTP Base (api.js)', () => {
       expect(getAuthToken()).toBe('jwt-token-session')
     })
 
+    // Verifica el respaldo cuando el token viene embebido en la sesión persistida por stores/auth.js
     it('recupera el token desde agrogestion.session.v1 si no existe en TOKEN_KEY', () => {
       localStorage.setItem(
         'agrogestion.session.v1',
@@ -55,6 +65,7 @@ describe('Servicio HTTP Base (api.js)', () => {
     })
   })
 
+  // Flujo de construcción de URL, cabeceras, serialización JSON y manejo de errores con fetch mockeado
   describe('Peticiones HTTP y cabeceras', () => {
     it('ejecuta apiGet y desempaqueta payload.data en respuestas { status: "success", data }', async () => {
       const fetchMock = vi.fn().mockResolvedValue({
@@ -79,6 +90,7 @@ describe('Servicio HTTP Base (api.js)', () => {
       expect(result).toEqual([{ _id: '1', nombre: 'El Robledal' }])
     })
 
+    // Comprueba que getAuthToken() alimenta automáticamente el header Authorization en apiRequest()
     it('inyecta automáticamente el header Authorization: Bearer <token> cuando hay token activo', async () => {
       setAuthToken('token-secreto-123', true)
 
@@ -142,6 +154,7 @@ describe('Servicio HTTP Base (api.js)', () => {
       expect(fetchMock.mock.calls[1][1].method).toBe('DELETE')
     })
 
+    // Valida la normalización de errores HTTP 4xx/5xx para que servicios y vistas lean status y details
     it('lanza un Error enriquecido con status y details cuando la respuesta HTTP no es ok', async () => {
       const fetchMock = vi.fn().mockResolvedValue({
         ok: false,
@@ -163,6 +176,7 @@ describe('Servicio HTTP Base (api.js)', () => {
       })
     })
 
+    // Verifica que checkApiHealth consulte /health sin desempaquetar payload.data
     it('checkApiHealth consulta /health y retorna el payload directo del servidor', async () => {
       const healthPayload = {
         status: 'OK',

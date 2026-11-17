@@ -1,4 +1,11 @@
 <script setup>
+/**
+ * Página CRUD genérica para todos los módulos de gestión (predios, lotes, cultivos,
+ * insumos, ciclos, labores, semilleros, cosechas, telemetría, notificaciones y usuarios).
+ * Se configura dinámicamente a partir de entityConfig (config.js) según route.name,
+ * delega Predios y Usuarios al backend mediante farms.service.js / users.service.js
+ * y persiste las demás entidades en storage.js.
+ */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
@@ -10,8 +17,8 @@ import { changeFarmStatus, createFarm, fetchFarms, updateFarm } from '@/services
 import { changeUserStatus, createUser, fetchUsers, updateUser } from '@/services/users.service'
 import { entityConfig } from '@/features/records/config'
 import RecordFormField from '@/features/records/components/RecordFormField.vue'
-import farmPlaceholder from '@/assets/predio-placeholder.svg'
-import lotPlaceholder from '@/assets/lote-placeholder.svg'
+import farmPlaceholder from '@/assets/farm-placeholder.svg'
+import lotPlaceholder from '@/assets/lot-placeholder.svg'
 import { getResponsibleUsers } from '@/services/mock/users'
 
 const route = useRoute()
@@ -64,6 +71,9 @@ const telemetryLotOptions = computed(() => getRecords('lots')
     (!allowedFarmIds.value || allowedFarmIds.value.includes(lot.farmId)))
   .map((lot) => ({ label: lot.name, value: lot.id })))
 
+/**
+ * Resuelve el ID del predio padre de un registro para aplicar el filtrado por alcance del usuario.
+ */
 function relatedFarmId(entity, item) {
   if (entity === 'farms') return item.id
   if (entity === 'lots' || entity === 'cycles' || entity === 'telemetry') return item.farmId
@@ -72,6 +82,10 @@ function relatedFarmId(entity, item) {
   if (entity === 'notifications') return getRecord('lots', item.lotId)?.farmId
   return null
 }
+
+/**
+ * Determina si un registro es visible para el usuario actual según visibleFarmIds().
+ */
 function isVisible(item) {
   if (!allowedFarmIds.value) return true
   const farmId = relatedFarmId(config.value.entity, item)
@@ -82,6 +96,9 @@ function nameOf(entity, id) {
   return getRecord(entity, id)?.name ?? getRecord(entity, id)?.title ?? '—'
 }
 
+/**
+ * Enriquece cada fila con etiquetas legibles y métricas derivadas para la tabla y tarjetas.
+ */
 function displayRow(item) {
   const row = { ...item }
   if (item.area !== undefined) row.areaLabel = `${formatArea(item.area)} HA`
@@ -334,6 +351,9 @@ function rejectImage() {
   $q.notify({ type: 'negative', message: 'La imagen supera el tamaño máximo de 2 MB.' })
 }
 
+/**
+ * Valida reglas de negocio, formatos y coherencia relacional entre entidades antes de guardar.
+ */
 function validateRelations() {
   const value = form.value
   for (const field of config.value.fields.filter((item) => item.type === 'number' && value[item.key] !== '' && value[item.key] !== null && value[item.key] !== undefined)) {
@@ -410,6 +430,9 @@ function validateRelations() {
   }
 }
 
+/**
+ * Envía el formulario hacia la API (para users y farms con sesión activa) o hacia storage.js.
+ */
 async function submitForm() {
   const valid = await formRef.value?.validate()
   if (!valid) return
@@ -479,6 +502,9 @@ function closeDeleteDialog() {
   deleteTimer.value = null
 }
 
+/**
+ * Ejecuta la eliminación lógica/remota (users, farms, notifications) o borrado local tras confirmar.
+ */
 async function deleteRecord() {
   const expectedName = rowName(pendingDelete.value)
   const requiresName = !['farms', 'lots'].includes(config.value.entity) || deleteStep.value === 2
@@ -570,6 +596,9 @@ onBeforeUnmount(() => {
   if (deleteTimer.value) clearTimeout(deleteTimer.value)
 })
 
+/**
+ * Sincroniza silenciosamente usuarios y predios desde el backend al entrar en módulos dependientes.
+ */
 async function syncRemoteUsersIfNeeded() {
   if (!getAuthToken()) return
   const entity = config.value?.entity

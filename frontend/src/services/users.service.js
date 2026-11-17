@@ -1,9 +1,18 @@
+/**
+ * Servicio de usuarios conectado a la API (/usuarios).
+ * Sincroniza los usuarios del backend con storage.js, migra referencias de propietario
+ * en los predios locales y mantiene actualizado al usuario autenticado en auth.js.
+ */
 import { getActivePinia } from 'pinia'
 import { apiGet, apiPatch, apiPost } from '@/services/api'
 import { mapBackendUserToFrontend, mapFrontendUserToBackend } from '@/services/mappers'
 import { getRecords, setRecords } from '@/services/storage'
 import { useAuthStore } from '@/stores/auth'
 
+/**
+ * Consulta GET /usuarios, deduplica registros, actualiza la colección local de usuarios
+ * y migra el campo owner de los predios si el ID del usuario cambió al sincronizar con MongoDB.
+ */
 export async function fetchUsers(params = { limit: 100 }) {
   const data = await apiGet('/usuarios', { params })
   const rawUsers = Array.isArray(data) ? data : (data?.usuarios ?? [])
@@ -39,6 +48,7 @@ export async function fetchUsers(params = { limit: 100 }) {
 
   setRecords('users', mapped)
 
+  // Reasigna el owner de los predios locales cuando el usuario pasa de ID demo a ObjectId real
   if (idMigrationMap.size > 0) {
     try {
       const farms = getRecords('farms')
@@ -58,6 +68,7 @@ export async function fetchUsers(params = { limit: 100 }) {
     }
   }
 
+  // Sincroniza los datos del usuario autenticado en Pinia si está presente en el listado
   try {
     if (getActivePinia()) {
       const auth = useAuthStore()
@@ -80,6 +91,9 @@ export async function fetchUsers(params = { limit: 100 }) {
   return mapped
 }
 
+/**
+ * Crea un usuario en POST /usuarios y conserva localmente los predios asignados en el formulario.
+ */
 export async function createUser(formUser) {
   const payload = mapFrontendUserToBackend(formUser, { isCreate: true })
   const data = await apiPost('/usuarios', payload)
@@ -91,6 +105,9 @@ export async function createUser(formUser) {
   return mapBackendUserToFrontend(merged, { syncStorage: true })
 }
 
+/**
+ * Actualiza un usuario existente en PATCH /usuarios/:id y sincroniza su copia local.
+ */
 export async function updateUser(id, formUser) {
   const payload = mapFrontendUserToBackend(formUser, { isCreate: false })
   const data = await apiPatch(`/usuarios/${id}`, payload)
@@ -102,6 +119,9 @@ export async function updateUser(id, formUser) {
   return mapBackendUserToFrontend(merged, { syncStorage: true })
 }
 
+/**
+ * Cambia el estado activo/inactivo de un usuario mediante PATCH /usuarios/:id/estado.
+ */
 export async function changeUserStatus(id, active) {
   const data = await apiPatch(`/usuarios/${id}/estado`, { estado: Boolean(active) })
   const rawUser = data?.usuario ?? data?.user ?? data

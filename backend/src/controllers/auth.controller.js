@@ -2,7 +2,8 @@ import authService from '../services/auth.service.js';
 import { sendSuccess } from '../shared/http/response.js';
 
 /**
- * Iniciar sesión
+ * Controlador para iniciar sesión de un usuario con correo y contraseña.
+ * Delega la verificación de credenciales y generación de JWT a `authService.login`.
  */
 export const login = async (req, res, next) => {
   try {
@@ -15,14 +16,15 @@ export const login = async (req, res, next) => {
 };
 
 /**
- * Obtener perfil del usuario autenticado
+ * Controlador para obtener el perfil del usuario autenticado en el token JWT.
+ * Consume `req.user` (o `req.usuario`) inyectado por `validateJwt`.
  */
 export const me = async (req, res, next) => {
   try {
     const user = req.user || req.usuario;
-    const usuarioId = user._id || user.id;
-    const perfil = await authService.getPerfil(usuarioId);
-    return sendSuccess(res, perfil, 'Perfil de usuario obtenido exitosamente', 200);
+    const userId = user._id || user.id;
+    const profile = await authService.getProfile(userId);
+    return sendSuccess(res, profile, 'Perfil de usuario obtenido exitosamente', 200);
   } catch (error) {
     next(error);
   }

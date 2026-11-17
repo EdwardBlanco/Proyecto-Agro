@@ -1,3 +1,7 @@
+/**
+ * Diccionario declarativo de configuración por entidad para RecordsPage.vue y RecordFormField.vue.
+ * Define columnas de tabla/tarjeta, campos de formulario, validaciones y relaciones entre módulos.
+ */
 const ref = (entity) => ({ entity })
 
 export const entityConfig = {

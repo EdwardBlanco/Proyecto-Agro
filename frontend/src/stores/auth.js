@@ -1,3 +1,8 @@
+/**
+ * Store Pinia de autenticación y sesión del usuario actual.
+ * Gestiona inicio/cierre de sesión contra /auth/login y /auth/me, persistencia en
+ * localStorage/sessionStorage y sincronización del token JWT a través de api.js.
+ */
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { apiGet, apiPost, clearAuthToken, getAuthToken, setAuthToken, TOKEN_KEY } from '@/services/api'
@@ -10,6 +15,9 @@ export const useAuthStore = defineStore('auth', () => {
   const currentUser = ref(null)
   const ready = ref(false)
 
+  /**
+   * Guarda la sesión del usuario en localStorage (si remember=true) o sessionStorage.
+   */
   function persistSession(user, token, remember = true) {
     const resolvedToken = token || getAuthToken() || undefined
     const payload = JSON.stringify({
@@ -26,6 +34,10 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /**
+   * Hidrata inmediatamente la sesión desde almacenamiento local para el guard del router
+   * y valida en segundo plano el token vigente consultando GET /auth/me.
+   */
   async function restore(forceVerify = false) {
     if (ready.value && !forceVerify) return currentUser.value
 
@@ -77,15 +89,19 @@ export const useAuthStore = defineStore('auth', () => {
     return currentUser.value
   }
 
+  /**
+   * Autentica al usuario contra POST /auth/login usando correo o alias normalizado,
+   * almacena el token JWT y actualiza currentUser.
+   */
   async function login(identifier, password, remember = true) {
     const cleanIdentifier = String(identifier ?? '').trim()
     if (!cleanIdentifier || !password) {
       throw new Error('Ingresa tu usuario y contraseña.')
     }
 
-    const correo = normalizeLoginEmail(cleanIdentifier)
+    const email = normalizeLoginEmail(cleanIdentifier)
     const data = await apiPost('/auth/login', {
-      correo,
+      correo: email,
       contrasena: password
     })
 
@@ -105,6 +121,9 @@ export const useAuthStore = defineStore('auth', () => {
     return mappedUser
   }
 
+  /**
+   * Limpia el estado reactivo, la sesión almacenada y el token JWT.
+   */
   function logout() {
     currentUser.value = null
     localStorage.removeItem(SESSION_KEY)

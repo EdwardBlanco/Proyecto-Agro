@@ -1,9 +1,20 @@
+/**
+ * Suite de pruebas de integración para el store Pinia de autenticación (src/stores/auth.js).
+ * Valida el flujo completo entre auth.js, api.js, mappers.js y storage.js:
+ * - Estado inicial sin sesión activa.
+ * - Inicio de sesión contra POST /auth/login (normalización de alias, mapeo de roles y JWT).
+ * - Manejo de credenciales inválidas (HTTP 401).
+ * - Restauración de sesión en dos fases: hidratación síncrona para el router y validación
+ *   remota contra GET /auth/me (incluyendo cierre automático si el token expiró).
+ * - Cierre de sesión y limpieza total en localStorage/sessionStorage.
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { SESSION_KEY, useAuthStore } from '@/stores/auth'
 import { getAuthToken, TOKEN_KEY } from '@/services/api'
 import { initializeStorage } from '@/services/storage'
 
+// Helper para simular respuestas JSON compatibles con api.js
 function mockJsonResponse(body, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -17,6 +28,7 @@ function mockJsonResponse(body, status = 200) {
 }
 
 describe('Auth Store (useAuthStore)', () => {
+  // Reinicia Pinia y el almacenamiento local antes de cada prueba
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
@@ -35,6 +47,7 @@ describe('Auth Store (useAuthStore)', () => {
     expect(auth.isAuthenticated).toBe(false)
   })
 
+  // Flujo login(): normalizeLoginEmail('admin') -> POST /auth/login -> setAuthToken(..., false) en sessionStorage
   it('autentica correctamente contra POST /api/v1/auth/login mapeando el rol y guardando el JWT', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       mockJsonResponse({
@@ -73,6 +86,7 @@ describe('Auth Store (useAuthStore)', () => {
     expect(sessionStorage.getItem(TOKEN_KEY)).toBe('jwt-demo-admin-token')
   })
 
+  // Verifica que un error 401 propagado por api.js impida autenticar y no persista ningún token
   it('lanza un error 401 al ingresar credenciales inválidas', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       mockJsonResponse(
@@ -92,6 +106,7 @@ describe('Auth Store (useAuthStore)', () => {
     expect(getAuthToken()).toBeNull()
   })
 
+  // Flujo restore(): hidratación inmediata desde localStorage + verificación remota con Bearer token en GET /auth/me
   it('restaura la sesión desde localStorage y valida el perfil con GET /api/v1/auth/me', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
@@ -132,7 +147,7 @@ describe('Auth Store (useAuthStore)', () => {
     expect(newAuth.currentUser).toBeNull()
 
     const restorePromise = newAuth.restore()
-    // Hidratación síncrona inmediata para el router
+    // Hidratación síncrona inmediata para el guard del router antes de resolver /auth/me
     expect(newAuth.isAuthenticated).toBe(true)
     expect(newAuth.currentUser?.id).toBe('user-supervisor')
 
@@ -143,6 +158,7 @@ describe('Auth Store (useAuthStore)', () => {
     expect(newAuth.currentUser?.role).toBe('SuperAdmin')
   })
 
+  // Verifica la invalidación automática de sesión cuando /auth/me rechaza el token almacenado con 401
   it('cierra la sesión automáticamente si GET /api/v1/auth/me responde 401 en restore()', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(
@@ -182,6 +198,7 @@ describe('Auth Store (useAuthStore)', () => {
     expect(getAuthToken()).toBeNull()
   })
 
+  // Flujo logout(): limpia estado reactivo en Pinia, SESSION_KEY y TOKEN_KEY en api.js
   it('cierra la sesión correctamente limpiando currentUser, sesión y token JWT', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       mockJsonResponse({

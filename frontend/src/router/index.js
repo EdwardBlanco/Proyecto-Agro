@@ -1,3 +1,8 @@
+/**
+ * Configuración de rutas de la aplicación y guardias de navegación.
+ * Conecta las rutas con el store de autenticación (auth.js), los permisos por módulo
+ * (permissions.js) y la verificación de acceso por predio en storage.js.
+ */
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { canAccess } from '@/services/permissions'
@@ -8,6 +13,7 @@ import DashboardPage from '@/features/dashboard/pages/DashboardPage.vue'
 import RecordsPage from '@/features/records/pages/RecordsPage.vue'
 import CycleDetailPage from '@/features/records/pages/CycleDetailPage.vue'
 
+// Definición de rutas públicas (login) y rutas protegidas bajo AppLayout
 const routes = [
   { path: '/login', name: 'login', component: LoginPage, meta: { guest: true } },
   {
@@ -35,6 +41,7 @@ const routes = [
 
 const router = createRouter({ history: createWebHistory(), routes })
 
+// Guardia global: restaura sesión local, valida autenticación, permisos de módulo y acceso al predio en /lots
 router.beforeEach((to) => {
   const auth = useAuthStore()
   auth.restore()

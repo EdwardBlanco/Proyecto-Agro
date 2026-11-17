@@ -3,7 +3,7 @@ import { getHealth } from '../controllers/health.controller.js';
 
 const router = Router();
 
-// GET /api/v1/health
+// GET /api/v1/health - Endpoint público de monitoreo de estado del servidor
 router.get('/', getHealth);
 
 export default router;

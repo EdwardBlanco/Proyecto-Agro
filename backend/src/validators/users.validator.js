@@ -1,7 +1,11 @@
 import { body } from 'express-validator';
-import { ROLES_PERMITIDOS } from '../models/Usuario.model.js';
+import { ALLOWED_ROLES } from '../models/User.model.js';
 
-export const crearUsuarioValidator = [
+/**
+ * Reglas de validación para la creación de un nuevo usuario (`POST /api/v1/usuarios`).
+ * Valida nombre, correo, contraseña mínima de 6 caracteres, rol permitido y estado booleano opcional.
+ */
+export const createUserValidator = [
   body('nombre')
     .trim()
     .notEmpty()
@@ -21,9 +25,9 @@ export const crearUsuarioValidator = [
     .withMessage('La contraseña es obligatoria y debe tener al menos 6 caracteres'),
   body('rol')
     .optional()
-    .custom((rol) => {
-      if (!ROLES_PERMITIDOS.includes(rol)) {
-        throw new Error(`El rol "${rol}" no es válido. Permitidos: ${ROLES_PERMITIDOS.join(', ')}`);
+    .custom((role) => {
+      if (!ALLOWED_ROLES.includes(role)) {
+        throw new Error(`El rol "${role}" no es válido. Permitidos: ${ALLOWED_ROLES.join(', ')}`);
       }
       return true;
     }),
@@ -33,7 +37,10 @@ export const crearUsuarioValidator = [
     .withMessage('El campo "estado" debe ser un booleano (true o false)')
 ];
 
-export const actualizarUsuarioValidator = [
+/**
+ * Reglas de validación para la actualización parcial o total de un usuario existente (`PUT /api/v1/usuarios/:id`).
+ */
+export const updateUserValidator = [
   body('nombre')
     .optional()
     .trim()
@@ -48,9 +55,9 @@ export const actualizarUsuarioValidator = [
     .withMessage('El formato del correo electrónico no es válido'),
   body('rol')
     .optional()
-    .custom((rol) => {
-      if (!ROLES_PERMITIDOS.includes(rol)) {
-        throw new Error(`El rol "${rol}" no es válido. Permitidos: ${ROLES_PERMITIDOS.join(', ')}`);
+    .custom((role) => {
+      if (!ALLOWED_ROLES.includes(role)) {
+        throw new Error(`El rol "${role}" no es válido. Permitidos: ${ALLOWED_ROLES.join(', ')}`);
       }
       return true;
     }),
@@ -60,7 +67,10 @@ export const actualizarUsuarioValidator = [
     .withMessage('El campo "estado" debe ser un booleano (true o false)')
 ];
 
-export const cambiarEstadoUsuarioValidator = [
+/**
+ * Reglas de validación para activar o desactivar un usuario (`PATCH /api/v1/usuarios/:id/estado`).
+ */
+export const changeUserStatusValidator = [
   body('estado')
     .exists({ checkNull: false })
     .withMessage('El campo "estado" es obligatorio y debe ser un booleano (true o false)')
@@ -68,7 +78,11 @@ export const cambiarEstadoUsuarioValidator = [
     .withMessage('El campo "estado" es obligatorio y debe ser un booleano (true o false)')
 ];
 
-export const cambiarContrasenaValidator = [
+/**
+ * Reglas de validación para el cambio de contraseña del usuario autenticado.
+ * Exige la contraseña actual y valida que la nueva tenga al menos 6 caracteres y sea diferente a la actual.
+ */
+export const changePasswordValidator = [
   body('contrasena_actual')
     .notEmpty()
     .withMessage('El campo "contrasena_actual" es obligatorio'),
@@ -86,8 +100,8 @@ export const cambiarContrasenaValidator = [
 ];
 
 export default {
-  crearUsuarioValidator,
-  actualizarUsuarioValidator,
-  cambiarEstadoUsuarioValidator,
-  cambiarContrasenaValidator
+  createUserValidator,
+  updateUserValidator,
+  changeUserStatusValidator,
+  changePasswordValidator
 };

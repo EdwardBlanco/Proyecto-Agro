@@ -1,3 +1,8 @@
+/**
+ * Servicio de predios conectado a la API (/predios).
+ * Sincroniza los predios remotos con el almacenamiento local (storage.js), migra referencias
+ * de IDs cuando cambian de formato demo a ObjectId y mantiene actualizado auth.currentUser.
+ */
 import { getActivePinia } from 'pinia'
 import { apiGet, apiPatch, apiPost } from '@/services/api'
 import {
@@ -8,6 +13,10 @@ import {
 import { getRecords, setRecords } from '@/services/storage'
 import { useAuthStore } from '@/stores/auth'
 
+/**
+ * Consulta el listado de predios en GET /predios, deduplica por ID/nombre,
+ * guarda en caché local y migra las referencias farmId en otras entidades si es necesario.
+ */
 export async function fetchFarms(params = { limit: 100 }) {
   const data = await apiGet('/predios', { params })
   const rawFarms = Array.isArray(data) ? data : (data?.predios ?? [])
@@ -27,6 +36,7 @@ export async function fetchFarms(params = { limit: 100 }) {
       continue
     }
 
+    // Detecta si un predio local previo coincide por nombre para migrar su ID al del backend
     const oldMatch = previousFarms.find(
       (f) =>
         String(f.id) === String(mappedFarm.id) ||
@@ -47,6 +57,7 @@ export async function fetchFarms(params = { limit: 100 }) {
     if (idMigrationMap.size > 0) {
       migrateFarmIdReferences(idMigrationMap)
 
+      // Actualiza también los predios asignados al usuario autenticado en el store de sesión
       try {
         if (getActivePinia()) {
           const auth = useAuthStore()
@@ -76,6 +87,9 @@ export async function fetchFarms(params = { limit: 100 }) {
   return mapped
 }
 
+/**
+ * Crea un nuevo predio en POST /predios preservando metadatos locales (owner, imagen, estado).
+ */
 export async function createFarm(formFarm) {
   const payload = mapFrontendFarmToBackend(formFarm)
   const data = await apiPost('/predios', payload)
@@ -91,6 +105,9 @@ export async function createFarm(formFarm) {
   return mapBackendFarmToFrontend(merged, { syncStorage: true })
 }
 
+/**
+ * Actualiza un predio existente mediante PATCH /predios/:id y sincroniza el storage local.
+ */
 export async function updateFarm(id, formFarm) {
   const payload = mapFrontendFarmToBackend(formFarm)
   const data = await apiPatch(`/predios/${id}`, payload)
@@ -106,6 +123,9 @@ export async function updateFarm(id, formFarm) {
   return mapBackendFarmToFrontend(merged, { syncStorage: true })
 }
 
+/**
+ * Activa o desactiva un predio en PATCH /predios/:id/estado y actualiza su registro local.
+ */
 export async function changeFarmStatus(id, active) {
   const data = await apiPatch(`/predios/${id}/estado`, { estado: Boolean(active) })
   const rawFarm = data?.predio ?? data?.farm ?? data

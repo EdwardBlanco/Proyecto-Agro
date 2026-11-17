@@ -1,7 +1,15 @@
+/**
+ * Cliente HTTP centralizado sobre fetch para comunicarse con la API REST (/api/v1).
+ * Administra la URL base, la gestión del token JWT en almacenamiento del navegador,
+ * la serialización JSON/FormData y el desempaquetado uniforme de respuestas y errores.
+ */
 export const API_BASE_URL = (import.meta.env?.VITE_API_URL || '/api/v1').replace(/\/+$/, '')
 export const TOKEN_KEY = 'agrogestion.token.v1'
 const SESSION_KEY = 'agrogestion.session.v1'
 
+/**
+ * Obtiene el token JWT vigente desde localStorage o sessionStorage (con respaldo en la sesión serializada).
+ */
 export function getAuthToken() {
   try {
     const directToken = localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY)
@@ -20,6 +28,9 @@ export function getAuthToken() {
   return null
 }
 
+/**
+ * Persiste el token JWT en localStorage (recordar sesión) o sessionStorage.
+ */
 export function setAuthToken(token, remember = true) {
   try {
     if (!token) {
@@ -38,6 +49,9 @@ export function setAuthToken(token, remember = true) {
   }
 }
 
+/**
+ * Elimina el token JWT tanto de localStorage como de sessionStorage.
+ */
 export function clearAuthToken() {
   try {
     localStorage.removeItem(TOKEN_KEY)
@@ -47,6 +61,9 @@ export function clearAuthToken() {
   }
 }
 
+/**
+ * Construye la URL final concatenando API_BASE_URL (si la ruta es relativa) y query params válidos.
+ */
 function buildUrl(endpoint, params) {
   const isAbsolute = /^https?:\/\//i.test(endpoint)
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`
@@ -68,6 +85,10 @@ function buildUrl(endpoint, params) {
   return `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}${queryString}`
 }
 
+/**
+ * Ejecuta una petición HTTP con inyección automática de Bearer token, parseo de respuesta
+ * y normalización de errores del backend (campos message, msg o errores[]).
+ */
 export async function apiRequest(endpoint, options = {}) {
   const {
     method = 'GET',

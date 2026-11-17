@@ -1,8 +1,15 @@
+/**
+ * Capa de persistencia local en localStorage con reactividad Vue (ref revision).
+ * Almacena las colecciones de demostración/caché para modo offline y entidades locales
+ * aún no migradas al backend, además de exponer helpers CRUD e integridad referencial.
+ */
 import { ref } from 'vue'
 
 const STORAGE_KEY = 'agrogestion.data.v1'
+// Contador reactivo que invalida los computed cuando cambia cualquier colección local
 const revision = ref(0)
 
+// Datos iniciales de demostración cargados la primera vez que se abre la aplicación
 const demoData = {
   users: [
     { id: 'user-admin', name: 'Laura Mendoza', email: 'admin@agrogestion.demo', role: 'Admin', farms: ['farm-1', 'farm-2'], active: true },
@@ -54,6 +61,9 @@ const demoData = {
   ]
 }
 
+/**
+ * Lee y normaliza las colecciones desde localStorage (migrando roles y estados heredados).
+ */
 function readData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -87,6 +97,9 @@ function readData() {
   }
 }
 
+/**
+ * Serializa las colecciones en localStorage e incrementa revision para refrescar vistas reactivas.
+ */
 function writeData(data) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
@@ -97,20 +110,32 @@ function writeData(data) {
   }
 }
 
+/**
+ * Inicializa el almacenamiento local con demoData si todavía no existe información guardada.
+ */
 export function initializeStorage() {
   if (!localStorage.getItem(STORAGE_KEY)) writeData(demoData)
 }
 
+/**
+ * Retorna todos los registros de una entidad registrando dependencia reactiva sobre revision.
+ */
 export function getRecords(entity) {
   revision.value
   const data = readData()
   return data[entity] ?? []
 }
 
+/**
+ * Busca un registro puntual por entidad e ID.
+ */
 export function getRecord(entity, id) {
   return getRecords(entity).find((record) => record.id === id) ?? null
 }
 
+/**
+ * Reemplaza por completo la colección local de una entidad (usado al sincronizar desde la API).
+ */
 export function setRecords(entity, records) {
   const data = readData()
   data[entity] = Array.isArray(records) ? records : []
@@ -120,6 +145,9 @@ export function setRecords(entity, records) {
 
 export const replaceRecords = setRecords
 
+/**
+ * Inserta o actualiza un registro local generando un UUID cuando no trae id.
+ */
 export function saveRecord(entity, record) {
   const data = readData()
   const records = data[entity] ?? []
@@ -132,6 +160,9 @@ export function saveRecord(entity, record) {
   return saved
 }
 
+/**
+ * Elimina un registro validando primero que no existan dependencias referenciales activas.
+ */
 export function removeRecord(entity, id) {
   const data = readData()
   const blockers = {

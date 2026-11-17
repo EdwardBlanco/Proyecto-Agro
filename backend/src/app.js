@@ -8,8 +8,8 @@ import errorHandler from './middlewares/errorHandler.js';
 // Rutas de la aplicación
 import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
-import usuariosRoutes from './routes/usuarios.routes.js';
-import prediosRoutes from './routes/predios.routes.js';
+import usersRoutes from './routes/users.routes.js';
+import farmsRoutes from './routes/farms.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 
 const app = express();
@@ -19,11 +19,11 @@ app.use(cors({ origin: config.corsOrigin }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Montaje de rutas de la API v1
+// Montaje de rutas de la API v1 (se conservan rutas HTTP en español por contrato)
 app.use('/api/v1/health', healthRoutes);
 app.use('/api/v1/auth', authRoutes);
-app.use('/api/v1/usuarios', usuariosRoutes);
-app.use('/api/v1/predios', prediosRoutes);
+app.use('/api/v1/usuarios', usersRoutes);
+app.use('/api/v1/predios', farmsRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
 
 // Manejo de rutas inexistentes (404)

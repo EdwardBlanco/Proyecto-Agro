@@ -1,5 +1,10 @@
+/**
+ * Adaptadores bidireccionales entre los esquemas del backend (MongoDB / API REST en español)
+ * y el modelo interno del frontend (en inglés), incluyendo la sincronización con storage.js.
+ */
 import { getRecords, saveRecord, setRecords } from '@/services/storage'
 
+// Diccionario de equivalencias entre roles del backend y nombres de rol en la UI del frontend
 export const BACKEND_TO_FRONTEND_ROLE = {
   superadmin: 'SuperAdmin',
   supervisor: 'SuperAdmin',
@@ -10,6 +15,7 @@ export const BACKEND_TO_FRONTEND_ROLE = {
   'agrónomo': 'Operario'
 }
 
+// Diccionario inverso para enviar roles normalizados al backend
 export const FRONTEND_TO_BACKEND_ROLE = {
   SuperAdmin: 'superadmin',
   Supervisor: 'superadmin',
@@ -19,6 +25,7 @@ export const FRONTEND_TO_BACKEND_ROLE = {
   'Agrónomo': 'operario'
 }
 
+// Alias cortos permitidos en el formulario de inicio de sesión para cuentas de demostración
 export const LOGIN_EMAIL_ALIASES = {
   admin: 'admin@agrogestion.demo',
   administrador: 'admin@agrogestion.demo',
@@ -30,13 +37,19 @@ export const LOGIN_EMAIL_ALIASES = {
   'agrónomo': 'maria@agrogestion.demo'
 }
 
-export function toFrontendRole(rol) {
-  if (!rol) return 'Operario'
-  if (['SuperAdmin', 'Admin', 'Operario'].includes(rol)) return rol
-  const normalized = String(rol).trim().toLowerCase()
+/**
+ * Convierte un rol proveniente del backend al formato esperado por permissions.js y la UI.
+ */
+export function toFrontendRole(role) {
+  if (!role) return 'Operario'
+  if (['SuperAdmin', 'Admin', 'Operario'].includes(role)) return role
+  const normalized = String(role).trim().toLowerCase()
   return BACKEND_TO_FRONTEND_ROLE[normalized] || 'Operario'
 }
 
+/**
+ * Convierte un rol del frontend al identificador aceptado por la API del backend.
+ */
 export function toBackendRole(role) {
   if (!role) return 'operario'
   if (FRONTEND_TO_BACKEND_ROLE[role]) return FRONTEND_TO_BACKEND_ROLE[role]
@@ -47,6 +60,9 @@ export function toBackendRole(role) {
   return 'operario'
 }
 
+/**
+ * Normaliza el identificador ingresado en el login (correo completo o alias demo).
+ */
 export function normalizeLoginEmail(identifier) {
   const clean = String(identifier ?? '').trim().toLowerCase()
   if (!clean) return ''
@@ -54,6 +70,10 @@ export function normalizeLoginEmail(identifier) {
   return LOGIN_EMAIL_ALIASES[clean] || clean
 }
 
+/**
+ * Transforma un documento de usuario recibido desde el backend al formato del frontend.
+ * Opcionalmente sincroniza el registro en localStorage preservando predios asignados locales.
+ */
 export function mapBackendUserToFrontend(backendUser, { syncStorage = true } = {}) {
   if (!backendUser || typeof backendUser !== 'object') return null
 
@@ -126,6 +146,9 @@ export function mapBackendUserToFrontend(backendUser, { syncStorage = true } = {
   return mappedUser
 }
 
+/**
+ * Transforma un usuario del formulario del frontend al payload esperado por POST/PATCH /usuarios.
+ */
 export function mapFrontendUserToBackend(frontendUser = {}, { isCreate = false } = {}) {
   if (!frontendUser || typeof frontendUser !== 'object') return {}
   const payload = {
@@ -144,12 +167,17 @@ export function mapFrontendUserToBackend(frontendUser = {}, { isCreate = false }
   if (password) {
     payload.contrasena = password
   } else if (isCreate) {
+    // Contraseña inicial por defecto cuando se crea una cuenta sin definir clave explícita
     payload.contrasena = 'Agro2026!'
   }
 
   return payload
 }
 
+/**
+ * Actualiza referencias locales de farmId en lotes, ciclos, telemetría y usuarios
+ * cuando un predio demo pasa a tener su ObjectId real proveniente de MongoDB.
+ */
 export function migrateFarmIdReferences(idMigrationMap) {
   if (!idMigrationMap || idMigrationMap.size === 0) return
 
@@ -195,35 +223,41 @@ export function migrateFarmIdReferences(idMigrationMap) {
   }
 }
 
+/**
+ * Convierte un predio del frontend (área en hectáreas, municipio/departamento, estado textual)
+ * al payload esperado por POST/PATCH /predios (área en m², ubicación compuesta y estado booleano).
+ */
 export function mapFrontendFarmToBackend(frontendFarm = {}) {
   if (!frontendFarm || typeof frontendFarm !== 'object') return {}
 
-  const nombre = String(frontendFarm.name ?? frontendFarm.nombre ?? '').trim()
+  const name = String(frontendFarm.name ?? frontendFarm.nombre ?? '').trim()
 
   const municipality = String(frontendFarm.municipality ?? '').trim()
   const department = String(frontendFarm.department ?? '').trim()
-  let ubicacion = ''
+  let location = ''
   if (municipality && department) {
-    ubicacion = `${municipality}, ${department}`
+    location = `${municipality}, ${department}`
   } else if (frontendFarm.ubicacion) {
-    ubicacion = String(frontendFarm.ubicacion).trim()
+    location = String(frontendFarm.ubicacion).trim()
   } else {
-    ubicacion = [municipality, department].filter(Boolean).join(', ')
+    location = [municipality, department].filter(Boolean).join(', ')
   }
 
+  // Coordenadas por defecto (Oriente Antioqueño) cuando el formulario no incluye geolocalización
   const rawLat = frontendFarm.latitud ?? frontendFarm.latitude
   const parsedLat =
     rawLat !== undefined && rawLat !== null && rawLat !== '' ? Number(rawLat) : NaN
-  const latitud =
+  const latitude =
     Number.isFinite(parsedLat) && parsedLat >= -90 && parsedLat <= 90 ? parsedLat : 6.1552
 
   const rawLng = frontendFarm.longitud ?? frontendFarm.longitude
   const parsedLng =
     rawLng !== undefined && rawLng !== null && rawLng !== '' ? Number(rawLng) : NaN
-  const longitud =
+  const longitude =
     Number.isFinite(parsedLng) && parsedLng >= -180 && parsedLng <= 180 ? parsedLng : -75.3737
 
-  let area_m2 = 0
+  // Conversión de hectáreas (frontend) a metros cuadrados (backend)
+  let areaM2 = 0
   if (
     frontendFarm.area_m2 !== undefined &&
     frontendFarm.area_m2 !== null &&
@@ -231,14 +265,14 @@ export function mapFrontendFarmToBackend(frontendFarm = {}) {
     Number.isFinite(Number(frontendFarm.area_m2)) &&
     Number(frontendFarm.area_m2) >= 0
   ) {
-    area_m2 = Math.round(Number(frontendFarm.area_m2) * 100) / 100
+    areaM2 = Math.round(Number(frontendFarm.area_m2) * 100) / 100
   } else {
     const rawHa = Number(String(frontendFarm.area ?? 0).replace(',', '.'))
-    area_m2 =
+    areaM2 =
       Number.isFinite(rawHa) && rawHa >= 0 ? Math.round(rawHa * 10000 * 100) / 100 : 0
   }
 
-  const estado =
+  const active =
     frontendFarm.status !== undefined && frontendFarm.status !== null && frontendFarm.status !== ''
       ? String(frontendFarm.status).trim() !== 'Inactivo'
       : typeof frontendFarm.estado === 'boolean'
@@ -246,15 +280,19 @@ export function mapFrontendFarmToBackend(frontendFarm = {}) {
         : true
 
   return {
-    nombre,
-    ubicacion,
-    latitud,
-    longitud,
-    area_m2,
-    estado
+    nombre: name,
+    ubicacion: location,
+    latitud: latitude,
+    longitud: longitude,
+    area_m2: areaM2,
+    estado: active
   }
 }
 
+/**
+ * Transforma un predio recibido del backend al modelo del frontend, convirtiendo m² a hectáreas,
+ * separando municipio/departamento y conservando metadatos locales (responsable, imagen, estado intermedio).
+ */
 export function mapBackendFarmToFrontend(backendFarm, { syncStorage = true } = {}) {
   if (!backendFarm || typeof backendFarm !== 'object') return null
 
@@ -276,16 +314,16 @@ export function mapBackendFarmToFrontend(backendFarm, { syncStorage = true } = {
 
   const id = String(rawId || existingFarm?.id || '')
 
-  const ubicacion = String(backendFarm.ubicacion ?? '').trim()
+  const location = String(backendFarm.ubicacion ?? '').trim()
   let parsedMunicipality = ''
   let parsedDepartment = ''
-  if (ubicacion) {
-    const commaIndex = ubicacion.indexOf(',')
+  if (location) {
+    const commaIndex = location.indexOf(',')
     if (commaIndex >= 0) {
-      parsedMunicipality = ubicacion.slice(0, commaIndex).trim()
-      parsedDepartment = ubicacion.slice(commaIndex + 1).trim()
+      parsedMunicipality = location.slice(0, commaIndex).trim()
+      parsedDepartment = location.slice(commaIndex + 1).trim()
     } else {
-      parsedMunicipality = ubicacion
+      parsedMunicipality = location
     }
   }
 

@@ -1,39 +1,43 @@
 import jwt from 'jsonwebtoken';
 import config from '../config/env.js';
 import AppError from '../shared/errors/AppError.js';
-import { Usuario } from '../models/Usuario.model.js';
+import { User } from '../models/User.model.js';
 
 /**
- * Autentica un usuario verificando credenciales y estado activo
- * @param {Object} credenciales
- * @param {string} credenciales.correo
- * @param {string} credenciales.contrasena
- * @returns {Promise<{token: string, usuario: object}>}
+ * Autentica un usuario verificando credenciales, estado activo y contraseña.
+ * Genera un token JWT con la información de sesión del usuario.
+ *
+ * @param {Object} credentials - Credenciales de acceso enviadas en la petición
+ * @param {string} credentials.correo - Correo electrónico del usuario
+ * @param {string} credentials.contrasena - Contraseña en texto plano
+ * @returns {Promise<{token: string, usuario: object}>} Token JWT y datos públicos del usuario
  */
 export const login = async ({ correo, contrasena }) => {
-  const correoNormalizado = correo ? correo.toLowerCase().trim() : '';
-  const usuario = await Usuario.findOne({ correo: correoNormalizado }).select('+contrasena_hash');
+  const normalizedEmail = correo ? correo.toLowerCase().trim() : '';
+  // Se incluye explícitamente contrasena_hash porque está excluido por defecto en el esquema
+  const user = await User.findOne({ correo: normalizedEmail }).select('+contrasena_hash');
 
-  if (!usuario) {
+  if (!user) {
     throw new AppError('Credenciales inválidas', 401);
   }
 
-  if (!usuario.estado) {
+  if (!user.estado) {
     throw new AppError('Usuario inactivo. Comuníquese con el administrador', 401);
   }
 
-  const esValida = await usuario.compararContrasena(contrasena);
-  if (!esValida) {
+  const isValid = await user.comparePassword(contrasena);
+  if (!isValid) {
     throw new AppError('Credenciales inválidas', 401);
   }
 
+  // El payload conserva uid, id y usuario_id para compatibilidad con el middleware validateJwt
   const token = jwt.sign(
     {
-      uid: usuario._id,
-      id: usuario._id,
-      usuario_id: usuario._id,
-      rol: usuario.rol,
-      correo: usuario.correo
+      uid: user._id,
+      id: user._id,
+      usuario_id: user._id,
+      rol: user.rol,
+      correo: user.correo
     },
     config.jwtSecret,
     { expiresIn: config.jwtExpiresIn }
@@ -41,24 +45,25 @@ export const login = async ({ correo, contrasena }) => {
 
   return {
     token,
-    usuario: usuario.toJSON()
+    usuario: user.toJSON()
   };
 };
 
 /**
- * Obtiene el perfil de un usuario autenticado
- * @param {string} usuarioId
- * @returns {Promise<object>}
+ * Obtiene el perfil de un usuario autenticado a partir de su identificador.
+ *
+ * @param {string} userId - Identificador único del usuario en MongoDB
+ * @returns {Promise<object>} Objeto JSON con los datos del perfil del usuario
  */
-export const getPerfil = async (usuarioId) => {
-  const usuario = await Usuario.findById(usuarioId);
-  if (!usuario) {
+export const getProfile = async (userId) => {
+  const user = await User.findById(userId);
+  if (!user) {
     throw new AppError('Usuario no encontrado', 404);
   }
-  return usuario.toJSON();
+  return user.toJSON();
 };
 
 export default {
   login,
-  getPerfil
+  getProfile
 };

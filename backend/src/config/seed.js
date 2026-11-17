@@ -1,9 +1,12 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
-import Usuario from '../models/Usuario.model.js';
-import Predio from '../models/Predio.model.js';
-import { conectarDB, disconnectDB } from './db.js';
+import User from '../models/User.model.js';
+import Farm from '../models/Farm.model.js';
+import { connectDB, disconnectDB } from './db.js';
 
+/**
+ * Cuentas de usuario demostrativas para inicializar la base de datos.
+ */
 export const DEMO_USERS = [
   {
     nombre: 'Laura Mendoza',
@@ -35,7 +38,10 @@ export const DEMO_USERS = [
   }
 ];
 
-export const DEMO_PREDIOS = [
+/**
+ * Predios agrícolas demostrativos para inicializar la base de datos.
+ */
+export const DEMO_FARMS = [
   {
     nombre: 'El Robledal',
     ubicacion: 'Rionegro, Antioquia',
@@ -56,19 +62,20 @@ export const DEMO_PREDIOS = [
 
 /**
  * Inserta de forma idempotente las cuentas demostrativas iniciales en la colección usuarios.
+ * @returns {Promise<{ created: number, skipped: number, total: number }>} Resumen de inserción
  */
 export const seedDemoUsers = async () => {
   let created = 0;
   let skipped = 0;
 
   for (const demoUser of DEMO_USERS) {
-    const existing = await Usuario.findOne({ correo: demoUser.correo.toLowerCase() });
+    const existing = await User.findOne({ correo: demoUser.correo.toLowerCase() });
     if (existing) {
       skipped += 1;
       continue;
     }
 
-    await Usuario.create({
+    await User.create({
       nombre: demoUser.nombre,
       correo: demoUser.correo.toLowerCase(),
       contrasena_hash: demoUser.contrasena_hash,
@@ -87,25 +94,26 @@ export const seedDemoUsers = async () => {
 
 /**
  * Inserta de forma idempotente los predios demostrativos iniciales en la colección predios.
+ * @returns {Promise<{ created: number, skipped: number, total: number }>} Resumen de inserción
  */
-export const seedDemoPredios = async () => {
+export const seedDemoFarms = async () => {
   let created = 0;
   let skipped = 0;
 
-  for (const demoPredio of DEMO_PREDIOS) {
-    const existing = await Predio.findOne({ nombre: demoPredio.nombre });
+  for (const demoFarm of DEMO_FARMS) {
+    const existing = await Farm.findOne({ nombre: demoFarm.nombre });
     if (existing) {
       skipped += 1;
       continue;
     }
 
-    await Predio.create({
-      nombre: demoPredio.nombre,
-      ubicacion: demoPredio.ubicacion,
-      latitud: demoPredio.latitud,
-      longitud: demoPredio.longitud,
-      area_m2: demoPredio.area_m2,
-      estado: demoPredio.estado
+    await Farm.create({
+      nombre: demoFarm.nombre,
+      ubicacion: demoFarm.ubicacion,
+      latitud: demoFarm.latitud,
+      longitud: demoFarm.longitud,
+      area_m2: demoFarm.area_m2,
+      estado: demoFarm.estado
     });
     created += 1;
   }
@@ -113,24 +121,25 @@ export const seedDemoPredios = async () => {
   return {
     created,
     skipped,
-    total: DEMO_PREDIOS.length
+    total: DEMO_FARMS.length
   };
 };
 
+// Permite ejecutar el script de seed directamente desde CLI sin afectar las importaciones en tests o app
 const __filename = fileURLToPath(import.meta.url);
 const isDirectRun =
   process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename);
 
 if (isDirectRun) {
-  conectarDB()
+  connectDB()
     .then(async () => {
       const usersResult = await seedDemoUsers();
       console.log(
         `[Seed] Usuarios demo procesados: ${usersResult.created} creados, ${usersResult.skipped} existentes.`
       );
-      const prediosResult = await seedDemoPredios();
+      const farmsResult = await seedDemoFarms();
       console.log(
-        `[Seed] Predios demo procesados: ${prediosResult.created} creados, ${prediosResult.skipped} existentes.`
+        `[Seed] Predios demo procesados: ${farmsResult.created} creados, ${farmsResult.skipped} existentes.`
       );
       await disconnectDB();
       process.exit(0);

@@ -1,6 +1,10 @@
 import { body } from 'express-validator';
 
-export const crearPredioValidator = [
+/**
+ * Reglas de validación para la creación de un nuevo predio (`POST /api/v1/predios`).
+ * Verifica campos obligatorios, rangos geográficos de latitud [-90, 90] y longitud [-180, 180], y área no negativa.
+ */
+export const createFarmValidator = [
   body('nombre')
     .trim()
     .notEmpty()
@@ -55,7 +59,10 @@ export const crearPredioValidator = [
     .withMessage('El campo "estado" debe ser un booleano (true o false)')
 ];
 
-export const actualizarPredioValidator = [
+/**
+ * Reglas de validación para la actualización parcial o total de un predio existente (`PUT /api/v1/predios/:id`).
+ */
+export const updateFarmValidator = [
   body('nombre')
     .optional()
     .trim()
@@ -109,7 +116,10 @@ export const actualizarPredioValidator = [
     .withMessage('El campo "estado" debe ser un booleano (true o false)')
 ];
 
-export const cambiarEstadoPredioValidator = [
+/**
+ * Reglas de validación para activar o desactivar un predio (`PATCH /api/v1/predios/:id/estado`).
+ */
+export const changeFarmStatusValidator = [
   body('estado')
     .exists({ checkNull: false })
     .withMessage('El campo "estado" es obligatorio y debe ser un booleano (true o false)')
@@ -118,7 +128,7 @@ export const cambiarEstadoPredioValidator = [
 ];
 
 export default {
-  crearPredioValidator,
-  actualizarPredioValidator,
-  cambiarEstadoPredioValidator
+  createFarmValidator,
+  updateFarmValidator,
+  changeFarmStatusValidator
 };

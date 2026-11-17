@@ -1,3 +1,11 @@
+/**
+ * Suite de pruebas para el servicio y adaptadores de predios.
+ * Valida la integración entre farms.service.js, mappers.js, api.js, storage.js y stores/auth.js:
+ * - Transformación bidireccional de campos frontend <-> backend (hectáreas <-> area_m2, ubicación).
+ * - Peticiones HTTP al recurso /predios y sincronización con el almacenamiento local.
+ * - Migración en cascada de referencias farmId (demo -> ObjectId) en lotes, ciclos, telemetría,
+ *   usuarios y el usuario autenticado en Pinia.
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { API_BASE_URL, setAuthToken } from '@/services/api'
@@ -11,6 +19,7 @@ import {
 } from '@/services/farms.service'
 import { useAuthStore } from '@/stores/auth'
 
+// Helper para simular respuestas JSON compatibles con el parser de api.js
 function mockJsonResponse(body, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -24,6 +33,7 @@ function mockJsonResponse(body, status = 200) {
 }
 
 describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', () => {
+  // Inicializa Pinia y la base local semilla (storage.js) antes de cada prueba
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
@@ -38,6 +48,7 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
     vi.restoreAllMocks()
   })
 
+  // Pruebas unitarias de mappers.js sin llamadas HTTP
   describe('Adaptadores bidireccionales (mappers.js)', () => {
     it('mapFrontendFarmToBackend convierte HA a area_m2, construye ubicacion y asigna coordenadas válidas', () => {
       const payload = mapFrontendFarmToBackend({
@@ -118,6 +129,7 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
     })
   })
 
+  // Pruebas de integración entre farms.service.js, api.js, mappers.js, storage.js y auth.js
   describe('Operaciones HTTP del Servicio de Predios (farms.service.js)', () => {
     it('fetchFarms consulta GET /api/v1/predios, sincroniza storage y migra referencias farmId en lots, cycles, telemetry, users y auth.currentUser', async () => {
       setAuthToken('jwt-admin-token', true)
@@ -174,7 +186,7 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
         status: 'Activo'
       })
 
-      // Verifica migración de referencias farm-1 -> ObjectId real
+      // Verifica migración de referencias farm-1 -> ObjectId real en storage.js y auth.currentUser
       expect(getRecord('lots', 'lot-1')?.farmId).toBe('65f1a2b3c4d5e6f7a8b9d001')
       expect(getRecord('lots', 'lot-3')?.farmId).toBe('65f1a2b3c4d5e6f7a8b9d002')
       expect(getRecord('cycles', 'cycle-1')?.farmId).toBe('65f1a2b3c4d5e6f7a8b9d001')
@@ -189,6 +201,7 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
       ])
     })
 
+    // Verifica creación en backend y conservación de metadatos locales (owner, status, image) en storage.js
     it('createFarm envía POST /api/v1/predios con area_m2 y ubicacion y guarda el predio en storage', async () => {
       setAuthToken('jwt-admin-token', true)
 
@@ -248,6 +261,7 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
       expect(getRecord('farms', '65f1a2b3c4d5e6f7a8b9d010')).toEqual(created)
     })
 
+    // Verifica actualización parcial en PATCH /predios/:id y sincronización inmediata del registro local
     it('updateFarm envía PATCH /api/v1/predios/:id y actualiza el predio en storage', async () => {
       setAuthToken('jwt-admin-token', true)
 
@@ -294,6 +308,7 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
       expect(getRecord('farms', 'farm-1')?.area).toBe(30)
     })
 
+    // Verifica cambio de estado booleano en backend y su mapeo a 'Activo'/'Inactivo' en storage.js
     it('changeFarmStatus envía PATCH /api/v1/predios/:id/estado y refleja el nuevo estado en storage', async () => {
       setAuthToken('jwt-admin-token', true)
 

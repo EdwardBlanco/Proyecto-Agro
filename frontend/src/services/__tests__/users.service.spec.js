@@ -1,3 +1,11 @@
+/**
+ * Suite de pruebas para el servicio de usuarios (src/services/users.service.js).
+ * Valida la integración entre users.service.js, mappers.js, api.js, storage.js y mock/users.js:
+ * - Consulta y sincronización de /usuarios con caché local preservando predios asignados.
+ * - Migración del campo owner en predios locales cuando un usuario pasa de ID demo a ObjectId.
+ * - Creación, actualización y cambio de estado (PATCH /usuarios/:id/estado).
+ * - Retorno inmediato y sincronización en segundo plano de getResponsibleUsers().
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { API_BASE_URL, setAuthToken } from '@/services/api'
@@ -10,6 +18,7 @@ import {
 } from '@/services/users.service'
 import { getResponsibleUsers, resetResponsibleUsersSync } from '@/services/mock/users'
 
+// Helper para simular respuestas JSON compatibles con el parser de api.js
 function mockJsonResponse(body, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -23,6 +32,7 @@ function mockJsonResponse(body, status = 200) {
 }
 
 describe('Servicio de Usuarios (users.service.js)', () => {
+  // Reinicia Pinia, almacenamiento semilla y bandera de sincronización de responsables en cada test
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
@@ -38,6 +48,7 @@ describe('Servicio de Usuarios (users.service.js)', () => {
     vi.restoreAllMocks()
   })
 
+  // Flujo fetchUsers -> mapBackendUserToFrontend -> setRecords('users') + migración de farm.owner
   it('fetchUsers consulta GET /api/v1/usuarios, sincroniza storage conservando predios y migra owner de predios', async () => {
     setAuthToken('jwt-admin-token', true)
 
@@ -104,6 +115,7 @@ describe('Servicio de Usuarios (users.service.js)', () => {
     expect(farm1.owner).toBe('65f1a2b3c4d5e6f7a8b9c001')
   })
 
+  // Flujo createUser: normalización de correo, contraseña inicial vía mappers.js y guardado de farms locales
   it('createUser envía POST /api/v1/usuarios con contraseña por defecto cuando se omite y guarda el usuario en storage', async () => {
     setAuthToken('jwt-admin-token', true)
 
@@ -156,6 +168,7 @@ describe('Servicio de Usuarios (users.service.js)', () => {
     expect(getRecord('users', '65f1a2b3c4d5e6f7a8b9c099')).toEqual(created)
   })
 
+  // Flujo updateUser: actualización en PATCH /usuarios/:id sin reenviar contraseña y preservando farms en storage
   it('updateUser envía PATCH /api/v1/usuarios/:id y actualiza el registro en storage conservando predios', async () => {
     setAuthToken('jwt-admin-token', true)
 
@@ -203,6 +216,7 @@ describe('Servicio de Usuarios (users.service.js)', () => {
     expect(getRecord('users', 'user-operator')?.role).toBe('Admin')
   })
 
+  // Flujo changeUserStatus: PATCH /usuarios/:id/estado y persistencia de active=false conservando farms
   it('changeUserStatus envía PATCH /api/v1/usuarios/:id/estado y refleja el nuevo estado en storage', async () => {
     setAuthToken('jwt-admin-token', true)
 
@@ -233,6 +247,7 @@ describe('Servicio de Usuarios (users.service.js)', () => {
     expect(getRecord('users', 'user-operator')?.active).toBe(false)
   })
 
+  // Integración mock/users.js -> users.service.js: lectura síncrona inicial y refresco en segundo plano
   it('getResponsibleUsers retorna usuarios activos en formato { label, value } y sincroniza con el backend si hay token', async () => {
     setAuthToken('jwt-admin-token', true)
 
@@ -264,7 +279,7 @@ describe('Servicio de Usuarios (users.service.js)', () => {
     expect(initialResponsible.length).toBeGreaterThan(0)
     expect(fetchSpy).toHaveBeenCalledTimes(1)
 
-    // Esperar a que resuelva la sincronización en segundo plano
+    // Esperar a que resuelva la sincronización en segundo plano y filtre solo usuarios activos
     await vi.waitFor(() => {
       const syncedResponsible = getResponsibleUsers()
       expect(syncedResponsible).toEqual([

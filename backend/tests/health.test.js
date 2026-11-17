@@ -1,13 +1,19 @@
+/**
+ * Pruebas de integración del módulo de salud del servidor (/api/v1/health)
+ * y manejo global de rutas no encontradas (HTTP 404).
+ */
 import request from 'supertest';
 import { jest } from '@jest/globals';
 import app from '../src/app.js';
 import { db } from '../src/config/db.js';
 
 describe('Fase 0 — Base Técnica y Health Check', () => {
+  // Restaurar cualquier espía o mock de Jest después de cada prueba
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
+  // Escenarios del endpoint de monitoreo de estado del servidor y base de datos
   describe('GET /api/v1/health', () => {
     it('debe responder 200 con el estado del servidor, uptime y db', async () => {
       const response = await request(app).get('/api/v1/health');
@@ -42,6 +48,7 @@ describe('Fase 0 — Base Técnica y Health Check', () => {
     });
   });
 
+  // Escenarios del manejador global de rutas no encontradas (404)
   describe('Manejo de rutas no encontradas (404)', () => {
     it('debe responder 404 con formato JSON estandarizado para GET inexistente', async () => {
       const response = await request(app).get('/api/v1/ruta-inexistente');

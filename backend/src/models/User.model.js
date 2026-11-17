@@ -1,9 +1,17 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
-export const ROLES_PERMITIDOS = ['superadmin', 'administrador', 'operario'];
+/**
+ * Roles permitidos para los usuarios del sistema.
+ * Se conservan en español porque forman parte del contrato de datos en MongoDB y la API.
+ */
+export const ALLOWED_ROLES = ['superadmin', 'administrador', 'operario'];
 
-const usuarioSchema = new mongoose.Schema(
+/**
+ * Esquema Mongoose para la colección 'usuarios'.
+ * Mantiene los nombres de campos del esquema y mensajes de validación en español.
+ */
+const userSchema = new mongoose.Schema(
   {
     nombre: {
       type: String,
@@ -30,8 +38,8 @@ const usuarioSchema = new mongoose.Schema(
       type: String,
       required: [true, 'El rol es obligatorio'],
       enum: {
-        values: ROLES_PERMITIDOS,
-        message: 'Rol inválido: {VALUE}. Permitidos: ' + ROLES_PERMITIDOS.join(', ')
+        values: ALLOWED_ROLES,
+        message: 'Rol inválido: {VALUE}. Permitidos: ' + ALLOWED_ROLES.join(', ')
       },
       default: 'operario'
     },
@@ -46,8 +54,11 @@ const usuarioSchema = new mongoose.Schema(
   }
 );
 
-// Middleware pre-save para hashear la contraseña si ha sido modificada
-usuarioSchema.pre('save', async function (next) {
+/**
+ * Hook pre-save para encriptar la contraseña con bcrypt únicamente cuando ha sido modificada.
+ * Evita re-hashear contraseñas que ya vienen cifradas con prefijo $2a$ o $2b$.
+ */
+userSchema.pre('save', async function (next) {
   if (!this.isModified('contrasena_hash')) {
     return next();
   }
@@ -66,16 +77,20 @@ usuarioSchema.pre('save', async function (next) {
   }
 });
 
-// Método de instancia para verificar contraseña
-usuarioSchema.methods.compararContrasena = async function (contrasenaCandidata) {
+/**
+ * Método de instancia para comparar una contraseña en texto plano contra el hash almacenado.
+ * @param {string} candidatePassword - Contraseña en texto plano a verificar
+ * @returns {Promise<boolean>} true si coincide con el hash almacenado; false en caso contrario
+ */
+userSchema.methods.comparePassword = async function (candidatePassword) {
   if (!this.contrasena_hash) {
     return false;
   }
-  return bcrypt.compare(contrasenaCandidata, this.contrasena_hash);
+  return bcrypt.compare(candidatePassword, this.contrasena_hash);
 };
 
-// Transformación a JSON para nunca exponer contrasena_hash ni __v
-usuarioSchema.set('toJSON', {
+// Transformación a JSON para nunca exponer contrasena_hash ni __v en las respuestas
+userSchema.set('toJSON', {
   transform: (doc, ret) => {
     delete ret.contrasena_hash;
     delete ret.__v;
@@ -83,7 +98,8 @@ usuarioSchema.set('toJSON', {
   }
 });
 
-usuarioSchema.set('toObject', {
+// Transformación a objeto plano para nunca exponer contrasena_hash ni __v
+userSchema.set('toObject', {
   transform: (doc, ret) => {
     delete ret.contrasena_hash;
     delete ret.__v;
@@ -91,6 +107,9 @@ usuarioSchema.set('toObject', {
   }
 });
 
-export const Usuario = mongoose.models.Usuario || mongoose.model('Usuario', usuarioSchema);
+/**
+ * Modelo Mongoose de Usuario vinculado a la colección 'usuarios'.
+ */
+export const User = mongoose.models.User || mongoose.model('User', userSchema);
 
-export default Usuario;
+export default User;
