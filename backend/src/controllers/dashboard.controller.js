@@ -2,18 +2,19 @@ import dashboardService from '../services/dashboard.service.js';
 import { sendSuccess } from '../shared/http/response.js';
 
 /**
- * Controlador para obtener el resumen del dashboard según el rol del usuario autenticado
+ * Controlador para obtener el resumen e indicadores del dashboard según el rol del usuario autenticado.
+ * Delega el cálculo de métricas a `dashboardService.getDashboardSummary`.
  */
-export const obtenerResumen = async (req, res, next) => {
+export const getSummary = async (req, res, next) => {
   try {
     const user = req.user || req.usuario;
-    const resumen = await dashboardService.obtenerResumenDashboard(user);
-    return sendSuccess(res, resumen, 'Resumen de dashboard obtenido exitosamente');
+    const summary = await dashboardService.getDashboardSummary(user);
+    return sendSuccess(res, summary, 'Resumen de dashboard obtenido exitosamente');
   } catch (error) {
     next(error);
   }
 };
 
 export default {
-  obtenerResumen
+  getSummary
 };

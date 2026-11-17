@@ -1,26 +1,33 @@
+/**
+ * Pruebas de integración del módulo de predios agrícolas (/api/v1/predios).
+ * Cubre creación, validaciones geográficas y de área, listado paginado con filtros,
+ * consulta individual, actualización parcial y desactivación/reactivación lógica.
+ */
 import request from 'supertest';
 import app from '../src/app.js';
-import { Usuario } from '../src/models/Usuario.model.js';
-import { Predio } from '../src/models/Predio.model.js';
+import { User } from '../src/models/User.model.js';
+import { Farm } from '../src/models/Farm.model.js';
 import { connectTestDb, clearTestDb, disconnectTestDb } from '../src/shared/testUtils/testDb.js';
 
 describe('Fase 3 — Módulo de Predios (GP-02)', () => {
   let adminToken;
-  let operarioToken;
+  let operatorToken;
   let adminUser;
-  let operarioUser;
+  let operatorUser;
 
+  // Conectar a la base de datos de pruebas al iniciar la suite
   beforeAll(async () => {
     await connectTestDb();
   });
 
+  // Limpiar BD, inicializar índices y crear usuarios administrador y operario antes de cada prueba
   beforeEach(async () => {
     await clearTestDb();
-    await Usuario.init();
-    await Predio.init();
+    await User.init();
+    await Farm.init();
 
     // Crear usuario admin para pruebas de mutación
-    adminUser = await Usuario.create({
+    adminUser = await User.create({
       nombre: 'Admin Predios',
       correo: 'admin.predios@agro.com',
       contrasena_hash: 'AdminSecret123!',
@@ -37,7 +44,7 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
     adminToken = adminLoginRes.body.data.token;
 
     // Crear usuario operario para pruebas de control de acceso RBAC
-    operarioUser = await Usuario.create({
+    operatorUser = await User.create({
       nombre: 'Operario Campo',
       correo: 'operario.campo@agro.com',
       contrasena_hash: 'OperarioPass123!',
@@ -45,22 +52,24 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
       estado: true
     });
 
-    const operarioLoginRes = await request(app)
+    const operatorLoginRes = await request(app)
       .post('/api/v1/auth/login')
       .send({
         correo: 'operario.campo@agro.com',
         contrasena: 'OperarioPass123!'
       });
-    operarioToken = operarioLoginRes.body.data.token;
+    operatorToken = operatorLoginRes.body.data.token;
   });
 
+  // Limpiar colección de pruebas y cerrar conexión al terminar la suite
   afterAll(async () => {
     await clearTestDb();
     await disconnectTestDb();
   });
 
+  // Escenarios de creación de predios y validación de coordenadas geográficas y área
   describe('POST /api/v1/predios (Golden Path GP-02)', () => {
-    const predioValido = {
+    const validFarm = {
       nombre: 'Hacienda La Primavera',
       ubicacion: 'Fusagasugá, Cundinamarca, Vereda El Espinal',
       latitud: 4.3468,
@@ -73,13 +82,13 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
       const res = await request(app)
         .post('/api/v1/predios')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send(predioValido);
+        .send(validFarm);
 
       expect(res.status).toBe(201);
       expect(res.body.status).toBe('success');
       expect(res.body.data).toHaveProperty('_id');
       expect(res.body.data.nombre).toBe('Hacienda La Primavera');
-      expect(res.body.data.ubicacion).toBe(predioValido.ubicacion);
+      expect(res.body.data.ubicacion).toBe(validFarm.ubicacion);
       expect(res.body.data.latitud).toBe(4.3468);
       expect(res.body.data.longitud).toBe(-74.3644);
       expect(res.body.data.area_m2).toBe(45000);
@@ -88,46 +97,46 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
     });
 
     it('debe rechazar con 400 si la latitud está fuera del rango [-90, 90]', async () => {
-      const resFueraInferior = await request(app)
+      const belowRangeRes = await request(app)
         .post('/api/v1/predios')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ ...predioValido, latitud: -91 });
+        .send({ ...validFarm, latitud: -91 });
 
-      expect(resFueraInferior.status).toBe(400);
-      expect(resFueraInferior.body.message || resFueraInferior.body.mensaje).toMatch(/latitud/i);
+      expect(belowRangeRes.status).toBe(400);
+      expect(belowRangeRes.body.message || belowRangeRes.body.mensaje).toMatch(/latitud/i);
 
-      const resFueraSuperior = await request(app)
+      const aboveRangeRes = await request(app)
         .post('/api/v1/predios')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ ...predioValido, latitud: 90.001 });
+        .send({ ...validFarm, latitud: 90.001 });
 
-      expect(resFueraSuperior.status).toBe(400);
-      expect(resFueraSuperior.body.message || resFueraSuperior.body.mensaje).toMatch(/latitud/i);
+      expect(aboveRangeRes.status).toBe(400);
+      expect(aboveRangeRes.body.message || aboveRangeRes.body.mensaje).toMatch(/latitud/i);
     });
 
     it('debe rechazar con 400 si la longitud está fuera del rango [-180, 180]', async () => {
-      const resFueraInferior = await request(app)
+      const belowRangeRes = await request(app)
         .post('/api/v1/predios')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ ...predioValido, longitud: -180.5 });
+        .send({ ...validFarm, longitud: -180.5 });
 
-      expect(resFueraInferior.status).toBe(400);
-      expect(resFueraInferior.body.message || resFueraInferior.body.mensaje).toMatch(/longitud/i);
+      expect(belowRangeRes.status).toBe(400);
+      expect(belowRangeRes.body.message || belowRangeRes.body.mensaje).toMatch(/longitud/i);
 
-      const resFueraSuperior = await request(app)
+      const aboveRangeRes = await request(app)
         .post('/api/v1/predios')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ ...predioValido, longitud: 181 });
+        .send({ ...validFarm, longitud: 181 });
 
-      expect(resFueraSuperior.status).toBe(400);
-      expect(resFueraSuperior.body.message || resFueraSuperior.body.mensaje).toMatch(/longitud/i);
+      expect(aboveRangeRes.status).toBe(400);
+      expect(aboveRangeRes.body.message || aboveRangeRes.body.mensaje).toMatch(/longitud/i);
     });
 
     it('debe rechazar con 400 si el área en m2 es negativa', async () => {
       const res = await request(app)
         .post('/api/v1/predios')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ ...predioValido, area_m2: -10 });
+        .send({ ...validFarm, area_m2: -10 });
 
       expect(res.status).toBe(400);
       expect(res.body.message || res.body.mensaje).toMatch(/área/i);
@@ -135,30 +144,30 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
 
     it('debe rechazar con 400 cuando faltan campos obligatorios o exceden longitud máxima', async () => {
       // Faltan nombre y ubicacion
-      const resIncompleto = await request(app)
+      const incompleteRes = await request(app)
         .post('/api/v1/predios')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ latitud: 4.5, longitud: -74.1, area_m2: 1000 });
 
-      expect(resIncompleto.status).toBe(400);
+      expect(incompleteRes.status).toBe(400);
 
       // Nombre excede 120 caracteres
-      const resNombreLargo = await request(app)
+      const longNameRes = await request(app)
         .post('/api/v1/predios')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
-          ...predioValido,
+          ...validFarm,
           nombre: 'A'.repeat(121)
         });
 
-      expect(resNombreLargo.status).toBe(400);
-      expect(resNombreLargo.body.message || resNombreLargo.body.mensaje || JSON.stringify(resNombreLargo.body.errores)).toMatch(/120/);
+      expect(longNameRes.status).toBe(400);
+      expect(longNameRes.body.message || longNameRes.body.mensaje || JSON.stringify(longNameRes.body.errores)).toMatch(/120/);
     });
 
     it('debe rechazar con 401 si no se envía token de autorización', async () => {
       const res = await request(app)
         .post('/api/v1/predios')
-        .send(predioValido);
+        .send(validFarm);
 
       expect(res.status).toBe(401);
     });
@@ -166,17 +175,18 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
     it('debe rechazar con 403 si un operario intenta crear un predio', async () => {
       const res = await request(app)
         .post('/api/v1/predios')
-        .set('Authorization', `Bearer ${operarioToken}`)
-        .send(predioValido);
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .send(validFarm);
 
       expect(res.status).toBe(403);
       expect(res.body.message).toMatch(/permisos suficientes/i);
     });
   });
 
+  // Escenarios de listado paginado, filtro por estado y búsqueda por texto
   describe('GET /api/v1/predios (Listado paginado y filtros)', () => {
     beforeEach(async () => {
-      await Predio.create([
+      await Farm.create([
         {
           nombre: 'Finca El Paraíso',
           ubicacion: 'Cota, Cundinamarca',
@@ -221,28 +231,28 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
     it('debe permitir a un operario consultar el listado de predios', async () => {
       const res = await request(app)
         .get('/api/v1/predios')
-        .set('Authorization', `Bearer ${operarioToken}`);
+        .set('Authorization', `Bearer ${operatorToken}`);
 
       expect(res.status).toBe(200);
       expect(res.body.data.predios.length).toBeGreaterThanOrEqual(1);
     });
 
     it('debe filtrar predios por estado activo o inactivo', async () => {
-      const resActivos = await request(app)
+      const activeRes = await request(app)
         .get('/api/v1/predios?estado=true')
         .set('Authorization', `Bearer ${adminToken}`);
 
-      expect(resActivos.status).toBe(200);
-      expect(resActivos.body.data.predios.every(p => p.estado === true)).toBe(true);
-      expect(resActivos.body.data.total).toBe(2);
+      expect(activeRes.status).toBe(200);
+      expect(activeRes.body.data.predios.every((farm) => farm.estado === true)).toBe(true);
+      expect(activeRes.body.data.total).toBe(2);
 
-      const resInactivos = await request(app)
+      const inactiveRes = await request(app)
         .get('/api/v1/predios?estado=false')
         .set('Authorization', `Bearer ${adminToken}`);
 
-      expect(resInactivos.status).toBe(200);
-      expect(resInactivos.body.data.predios.every(p => p.estado === false)).toBe(true);
-      expect(resInactivos.body.data.total).toBe(1);
+      expect(inactiveRes.status).toBe(200);
+      expect(inactiveRes.body.data.predios.every((farm) => farm.estado === false)).toBe(true);
+      expect(inactiveRes.body.data.total).toBe(1);
     });
 
     it('debe buscar predios por término de búsqueda q en nombre o ubicación', async () => {
@@ -256,11 +266,12 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
     });
   });
 
+  // Escenarios de consulta individual por identificador
   describe('GET /api/v1/predios/:id (Consulta individual)', () => {
-    let predioCreado;
+    let createdFarm;
 
     beforeEach(async () => {
-      predioCreado = await Predio.create({
+      createdFarm = await Farm.create({
         nombre: 'Granja San José',
         ubicacion: 'Subachoque, Cundinamarca',
         latitud: 4.9312,
@@ -272,12 +283,12 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
 
     it('debe obtener un predio existente por su ID', async () => {
       const res = await request(app)
-        .get(`/api/v1/predios/${predioCreado._id}`)
+        .get(`/api/v1/predios/${createdFarm._id}`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('success');
-      expect(res.body.data._id).toBe(predioCreado._id.toString());
+      expect(res.body.data._id).toBe(createdFarm._id.toString());
       expect(res.body.data.nombre).toBe('Granja San José');
     });
 
@@ -300,11 +311,12 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
     });
   });
 
+  // Escenarios de actualización parcial de atributos del predio
   describe('PATCH /api/v1/predios/:id (Actualización de predio)', () => {
-    let predioParaActualizar;
+    let farmToUpdate;
 
     beforeEach(async () => {
-      predioParaActualizar = await Predio.create({
+      farmToUpdate = await Farm.create({
         nombre: 'Finca La Esperanza',
         ubicacion: 'Tenjo, Cundinamarca',
         latitud: 4.8721,
@@ -316,7 +328,7 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
 
     it('debe actualizar campos específicos de un predio exitosamente', async () => {
       const res = await request(app)
-        .patch(`/api/v1/predios/${predioParaActualizar._id}`)
+        .patch(`/api/v1/predios/${farmToUpdate._id}`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           nombre: 'Hacienda La Esperanza Renovada',
@@ -334,7 +346,7 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
 
     it('debe rechazar con 400 si se envía un valor de coordenadas o área inválido', async () => {
       const res = await request(app)
-        .patch(`/api/v1/predios/${predioParaActualizar._id}`)
+        .patch(`/api/v1/predios/${farmToUpdate._id}`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           latitud: 95
@@ -346,8 +358,8 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
 
     it('debe rechazar con 403 si un operario intenta actualizar el predio', async () => {
       const res = await request(app)
-        .patch(`/api/v1/predios/${predioParaActualizar._id}`)
-        .set('Authorization', `Bearer ${operarioToken}`)
+        .patch(`/api/v1/predios/${farmToUpdate._id}`)
+        .set('Authorization', `Bearer ${operatorToken}`)
         .send({
           nombre: 'Cambio No Autorizado'
         });
@@ -356,11 +368,12 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
     });
   });
 
+  // Escenarios de cambio de estado lógico (desactivación y reactivación)
   describe('PATCH /api/v1/predios/:id/estado (Desactivación lógica de predio)', () => {
-    let predioActivo;
+    let activeFarm;
 
     beforeEach(async () => {
-      predioActivo = await Predio.create({
+      activeFarm = await Farm.create({
         nombre: 'Finca Vista Hermosa',
         ubicacion: 'Tabio, Cundinamarca',
         latitud: 4.9123,
@@ -372,7 +385,7 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
 
     it('debe desactivar lógicamente un predio (estado: false)', async () => {
       const res = await request(app)
-        .patch(`/api/v1/predios/${predioActivo._id}/estado`)
+        .patch(`/api/v1/predios/${activeFarm._id}/estado`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ estado: false });
 
@@ -380,16 +393,16 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
       expect(res.body.status).toBe('success');
       expect(res.body.data.estado).toBe(false);
 
-      // Verificar en base de datos
-      const predioEnDb = await Predio.findById(predioActivo._id);
-      expect(predioEnDb.estado).toBe(false);
+      // Verificar persistencia en base de datos
+      const farmInDb = await Farm.findById(activeFarm._id);
+      expect(farmInDb.estado).toBe(false);
     });
 
     it('debe reactivar lógicamente un predio desactivado (estado: true)', async () => {
-      await Predio.findByIdAndUpdate(predioActivo._id, { estado: false });
+      await Farm.findByIdAndUpdate(activeFarm._id, { estado: false });
 
       const res = await request(app)
-        .patch(`/api/v1/predios/${predioActivo._id}/estado`)
+        .patch(`/api/v1/predios/${activeFarm._id}/estado`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ estado: true });
 
@@ -399,7 +412,7 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
 
     it('debe rechazar con 400 si el campo estado no es booleano', async () => {
       const res = await request(app)
-        .patch(`/api/v1/predios/${predioActivo._id}/estado`)
+        .patch(`/api/v1/predios/${activeFarm._id}/estado`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ estado: 'inactivo' });
 
@@ -409,8 +422,8 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
 
     it('debe rechazar con 403 si un operario intenta cambiar el estado', async () => {
       const res = await request(app)
-        .patch(`/api/v1/predios/${predioActivo._id}/estado`)
-        .set('Authorization', `Bearer ${operarioToken}`)
+        .patch(`/api/v1/predios/${activeFarm._id}/estado`)
+        .set('Authorization', `Bearer ${operatorToken}`)
         .send({ estado: false });
 
       expect(res.status).toBe(403);

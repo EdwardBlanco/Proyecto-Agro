@@ -1,4 +1,8 @@
 <script setup>
+/**
+ * Vista de detalle de un ciclo productivo (/cycles/:id).
+ * Consolida predio, lote, cultivo, labores/incidencias, cosechas acumuladas y semilleros vinculados.
+ */
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getRecord, getRecords } from '@/services/storage'
@@ -9,6 +13,8 @@ import { harvestKilograms } from '@/services/production'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+
+// Verifica existencia del ciclo y restringe su visibilidad a predios asignados si el usuario es Operario
 const cycle = computed(() => {
   const found = getRecord('cycles', route.params.id)
   if (!found || ['SuperAdmin', 'Admin'].includes(auth.currentUser?.role)) return found
@@ -23,6 +29,9 @@ const nurseries = computed(() => getRecords('nurseries').filter((item) => item.c
 const canAddRecords = computed(() => canWrite(auth.currentUser, 'activities'))
 const total = computed(() => harvests.value.reduce((sum, item) => sum + harvestKilograms(item), 0))
 
+/**
+ * Formatea fechas ISO (YYYY-MM-DD) a formato legible en español colombiano.
+ */
 function formatDate(value) {
   const date = new Date(`${value}T00:00:00`)
   return Number.isFinite(date.getTime())

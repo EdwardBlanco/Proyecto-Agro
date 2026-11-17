@@ -1,11 +1,16 @@
 <script setup>
+/**
+ * Panel principal de resumen operativo (/), con métricas climáticas/productivas,
+ * lotes destacados, actividad reciente, alertas, gráfica de cosechas y franja de telemetría.
+ * Filtra toda la información de storage.js según los predios visibles del usuario en auth.js.
+ */
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { canAccess } from '@/services/permissions'
 import { harvestKilograms } from '@/services/production'
 import { getRecords } from '@/services/storage'
-import lotPlaceholder from '@/assets/lote-placeholder.svg'
+import lotPlaceholder from '@/assets/lot-placeholder.svg'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -13,6 +18,10 @@ const todayLabel = new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: 'num
   .format(new Date())
   .toLocaleUpperCase('es-CO')
 const farmIds = computed(() => auth.currentUser?.farms ?? [])
+
+/**
+ * Resuelve el predio asociado a un registro de cualquier entidad para aplicar control de alcance.
+ */
 function farmFor(entity, item) {
   if (entity === 'farms') return item.id
   if (item.farmId) return item.farmId
@@ -20,6 +29,8 @@ function farmFor(entity, item) {
   if (item.cycleId) return getRecords('cycles').find((cycle) => cycle.id === item.cycleId)?.farmId
   return null
 }
+
+// Filtra las colecciones locales para mostrar solo registros de predios permitidos al usuario
 const scoped = (entity) => {
   const items = getRecords(entity)
   return auth.currentUser?.role === 'SuperAdmin' || auth.currentUser?.role === 'Admin'
@@ -109,12 +120,18 @@ function formatChartDate(value) {
     : value
 }
 
+/**
+ * Aplica la imagen SVG predeterminada si falla la carga de la foto del lote.
+ */
 function useLotImageFallback(event) {
   if (event.target.dataset.fallbackApplied) return
   event.target.dataset.fallbackApplied = 'true'
   event.target.src = lotPlaceholder
 }
 
+/**
+ * Navega al módulo correspondiente cuando el usuario tiene acceso en permissions.js.
+ */
 function openMetric(metric) {
   if (canAccess(auth.currentUser, metric.route)) router.push({ name: metric.route })
 }

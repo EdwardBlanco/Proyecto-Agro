@@ -1,14 +1,14 @@
 import jwt from 'jsonwebtoken';
 import config from '../config/env.js';
-import { Usuario } from '../models/Usuario.model.js';
-import AppError from '../shared/errors/AppError.js';
+import { User } from '../models/User.model.js';
 
 /**
- * Genera un token JWT firmado con el ID de usuario
- * @param {string} uid
- * @returns {Promise<string>}
+ * Genera un token JWT firmado con el ID del usuario.
+ * Incluye las claves uid, id y usuario_id en el payload para compatibilidad con consumidores existentes.
+ * @param {string} uid - Identificador único del usuario en MongoDB
+ * @returns {Promise<string>} Token JWT firmado
  */
-export const generarJWT = (uid) => {
+export const generateJwt = (uid) => {
   return new Promise((resolve, reject) => {
     const payload = {
       uid,
@@ -24,7 +24,7 @@ export const generarJWT = (uid) => {
       { expiresIn },
       (err, token) => {
         if (err) {
-          console.error('[validar-jwt] Error al generar token:', err);
+          console.error('[validateJwt] Error al generar token:', err);
           reject('No se pudo generar el token');
         } else {
           resolve(token);
@@ -35,11 +35,16 @@ export const generarJWT = (uid) => {
 };
 
 /**
- * Middleware para validar el token JWT proveniente de la cabecera x-token o Authorization: Bearer
+ * Middleware de autenticación que valida el token JWT recibido en la cabecera `x-token` o `Authorization: Bearer`.
+ * Verifica que el usuario exista y esté activo en la base de datos antes de continuar.
+ * @param {import('express').Request} req - Objeto de solicitud HTTP
+ * @param {import('express').Response} res - Objeto de respuesta HTTP
+ * @param {import('express').NextFunction} next - Función para continuar al siguiente middleware
  */
-export const validarJWT = async (req, res, next) => {
+export const validateJwt = async (req, res, next) => {
   let token = req.header('x-token');
 
+  // Si no viene en x-token, extraerlo desde Authorization (formato Bearer o token plano)
   if (!token && req.headers.authorization) {
     if (req.headers.authorization.startsWith('Bearer ')) {
       token = req.headers.authorization.split(' ')[1];
@@ -60,8 +65,8 @@ export const validarJWT = async (req, res, next) => {
     const decoded = jwt.verify(token, config.jwtSecret);
     const uid = decoded.uid || decoded.id || decoded.usuario_id || decoded.sub;
 
-    const usuario = await Usuario.findById(uid);
-    if (!usuario) {
+    const user = await User.findById(uid);
+    if (!user) {
       return res.status(401).json({
         status: 'fail',
         msg: 'Token no válido - usuario no existe en DB',
@@ -69,7 +74,7 @@ export const validarJWT = async (req, res, next) => {
       });
     }
 
-    if (!usuario.estado) {
+    if (!user.estado) {
       return res.status(401).json({
         status: 'fail',
         msg: 'Token no válido - usuario inactivo',
@@ -77,9 +82,9 @@ export const validarJWT = async (req, res, next) => {
       });
     }
 
-    // Inyectar usuario en la petición (tanto req.usuario según guía como req.user para tests)
-    req.usuario = usuario;
-    req.user = usuario;
+    // Inyectar usuario autenticado en la petición (req.usuario y req.user por compatibilidad con controladores y tests)
+    req.usuario = user;
+    req.user = user;
 
     next();
   } catch (error) {
@@ -93,6 +98,7 @@ export const validarJWT = async (req, res, next) => {
   }
 };
 
-export const authenticate = validarJWT;
+// Alias estándar en inglés para el middleware de autenticación
+export const authenticate = validateJwt;
 
-export default validarJWT;
+export default validateJwt;

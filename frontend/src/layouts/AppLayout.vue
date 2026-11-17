@@ -1,4 +1,8 @@
 <script setup>
+/**
+ * Shell principal autenticado de la aplicación (barra lateral, cabecera, estado de red y notificaciones).
+ * Filtra los enlaces de navegación según permissions.js y sincroniza el centro de notificaciones con storage.js.
+ */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
@@ -17,6 +21,8 @@ const isCompactViewport = ref(window.innerWidth < 1024)
 const notificationPopover = ref(false)
 const notificationTab = ref('all')
 const clearNotificationsDialog = ref(false)
+
+// Catálogo de rutas del menú lateral agrupadas por área funcional
 const links = [
   { title: 'Resumen', icon: 'space_dashboard', name: 'dashboard', module: 'dashboard', group: 'GENERAL' },
   { title: 'Predios y lotes', icon: 'landscape', name: 'farms', module: 'farms', group: 'GESTIÓN AGRÍCOLA' },
@@ -36,13 +42,22 @@ const groupedLinks = computed(() => visibleLinks.value.reduce((groups, link) => 
   return groups
 }, {}))
 const pageTitle = computed(() => route.meta.title ?? 'SENAgro')
+
+// Cierra el cajón móvil automáticamente al navegar entre rutas
 watch(() => route.fullPath, () => {
   mobileDrawerOpen.value = false
 })
+
+/**
+ * Actualiza el indicador visual de conectividad con el navegador.
+ */
 function updateNetworkStatus() {
   isOnline.value = navigator.onLine
 }
 
+/**
+ * Detecta cambios de ancho de pantalla para alternar entre menú de escritorio y móvil.
+ */
 function updateViewportStatus() {
   isCompactViewport.value = window.innerWidth < 1024
 }
@@ -59,6 +74,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', updateViewportStatus)
 })
 
+// Notificaciones visibles según el rol y los predios asignados al usuario
 const notifications = computed(() => {
   const farms = auth.currentUser?.farms ?? []
   return getRecords('notifications')
@@ -78,12 +94,18 @@ const shownNotifications = computed(() => notificationTab.value === 'history'
     ? activeNotifications.value.filter(isUnread)
     : activeNotifications.value)
 
+/**
+ * Cierra la sesión en el store y redirige a la pantalla de login.
+ */
 function logout() {
   notificationPopover.value = false
   auth.logout()
   router.replace({ name: 'login' })
 }
 
+/**
+ * Formatea marcas de tiempo relativas ("Ahora", "Hace X min/h/d") para el popover de avisos.
+ */
 function relativeTime(value) {
   const timestamp = new Date(value).getTime()
   if (!Number.isFinite(timestamp)) return ''
@@ -97,6 +119,9 @@ function relativeTime(value) {
   return new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short' }).format(timestamp)
 }
 
+/**
+ * Marca una notificación individual como leída en almacenamiento local.
+ */
 function markNotificationRead(notification) {
   if (notification.readAt) return
   try {
@@ -106,11 +131,17 @@ function markNotificationRead(notification) {
   }
 }
 
+/**
+ * Cierra el menú flotante y navega a la vista completa de notificaciones.
+ */
 async function openAllNotifications() {
   notificationPopover.value = false
   await router.push({ name: 'notifications' })
 }
 
+/**
+ * Envía todas las notificaciones activas al historial marcándolas con deletedAt.
+ */
 function clearAllNotifications() {
   try {
     const deletedAt = new Date().toISOString()

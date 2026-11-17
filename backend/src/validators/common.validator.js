@@ -1,7 +1,8 @@
 import { param } from 'express-validator';
 
 /**
- * Validador para parámetro :id en URL (debe ser un ObjectId válido de MongoDB)
+ * Validador reutilizable para el parámetro de ruta `:id`.
+ * Verifica que corresponda a un ObjectId válido de MongoDB antes de consultar la base de datos.
  */
 export const idValidator = [
   param('id')

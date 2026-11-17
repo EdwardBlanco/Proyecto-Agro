@@ -1,3 +1,7 @@
+/**
+ * Pruebas unitarias para utilidades compartidas, errores personalizados y middlewares globales.
+ * Cubre AppError, helpers de respuesta HTTP, errorHandler y authorizeRole.
+ */
 import { jest } from '@jest/globals';
 import AppError from '../src/shared/errors/AppError.js';
 import errorHandler from '../src/middlewares/errorHandler.js';
@@ -5,6 +9,7 @@ import { sendSuccess, sendCreated, sendError } from '../src/shared/http/response
 import authorizeRole from '../src/middlewares/authorizeRole.js';
 
 describe('Shared Utilities and Errors', () => {
+  // Validación de la clase de error operacional AppError
   describe('AppError', () => {
     it('debe instanciar correctamente con statusCode 400 y status "fail"', () => {
       const error = new AppError('Error de cliente', 400, { field: 'email' });
@@ -24,6 +29,7 @@ describe('Shared Utilities and Errors', () => {
     });
   });
 
+  // Validación de los helpers estandarizados de respuesta JSON
   describe('HTTP Response Utilities', () => {
     let mockRes;
 
@@ -66,6 +72,7 @@ describe('Shared Utilities and Errors', () => {
     });
   });
 
+  // Validación del middleware centralizado de manejo de errores de Mongoose y cliente
   describe('errorHandler Middleware', () => {
     let mockReq;
     let mockRes;
@@ -128,6 +135,7 @@ describe('Shared Utilities and Errors', () => {
     });
   });
 
+  // Validación del middleware de autorización por roles (RBAC)
   describe('authorizeRole Middleware', () => {
     let mockRes;
     let mockNext;

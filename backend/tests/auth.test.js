@@ -1,18 +1,26 @@
+/**
+ * Pruebas de integración del módulo de autenticación (GP-01).
+ * Cubre el inicio de sesión con generación de JWT, validación de credenciales,
+ * rechazo de usuarios inactivos y consulta del perfil autenticado (/auth/me).
+ */
 import request from 'supertest';
 import app from '../src/app.js';
-import { Usuario } from '../src/models/Usuario.model.js';
+import { User } from '../src/models/User.model.js';
 import { connectTestDb, clearTestDb, disconnectTestDb } from '../src/shared/testUtils/testDb.js';
 
 describe('Fase 1 — Módulo de Autenticación (GP-01)', () => {
+  // Conectar a la base de datos aislada de pruebas antes de ejecutar la suite
   beforeAll(async () => {
     await connectTestDb();
   });
 
+  // Limpiar colecciones e inicializar índices únicos antes de cada caso
   beforeEach(async () => {
     await clearTestDb();
-    await Usuario.init();
+    await User.init();
   });
 
+  // Limpiar datos residuales y cerrar la conexión al finalizar la suite
   afterAll(async () => {
     await clearTestDb();
     await disconnectTestDb();
@@ -26,10 +34,11 @@ describe('Fase 1 — Módulo de Autenticación (GP-01)', () => {
     estado: true
   };
 
+  // Escenarios de inicio de sesión y validaciones de entrada
   describe('POST /api/v1/auth/login', () => {
     it('debe iniciar sesión con credenciales válidas y retornar JWT sin exponer contrasena_hash', async () => {
       // Creamos el usuario en la BD de pruebas
-      await Usuario.create(testUser);
+      await User.create(testUser);
 
       const res = await request(app)
         .post('/api/v1/auth/login')
@@ -47,13 +56,13 @@ describe('Fase 1 — Módulo de Autenticación (GP-01)', () => {
       expect(res.body.data.usuario.nombre).toBe('Carlos Agrónomo');
       expect(res.body.data.usuario.rol).toBe('administrador');
 
-      // Verificación estricta de seguridad: nunca exponer contrasena_hash
+      // Verificación estricta de seguridad: nunca exponer contrasena_hash ni la clave en texto plano
       expect(res.body.data.usuario.contrasena_hash).toBeUndefined();
       expect(JSON.stringify(res.body)).not.toContain('Password123!');
     });
 
     it('debe responder 401 ante una contraseña incorrecta', async () => {
-      await Usuario.create(testUser);
+      await User.create(testUser);
 
       const res = await request(app)
         .post('/api/v1/auth/login')
@@ -81,7 +90,7 @@ describe('Fase 1 — Módulo de Autenticación (GP-01)', () => {
     });
 
     it('debe responder 401 si el usuario está inactivo (estado: false)', async () => {
-      await Usuario.create({
+      await User.create({
         ...testUser,
         correo: 'inactivo@agro.com',
         estado: false
@@ -100,25 +109,28 @@ describe('Fase 1 — Módulo de Autenticación (GP-01)', () => {
     });
 
     it('debe responder 400 cuando faltan datos obligatorios o el formato es incorrecto', async () => {
-      const resSinCorreo = await request(app)
+      // Caso sin correo electrónico
+      const noEmailRes = await request(app)
         .post('/api/v1/auth/login')
         .send({ contrasena: 'Password123!' });
 
-      expect(resSinCorreo.status).toBe(400);
-      expect(resSinCorreo.body.status).toBe('fail');
+      expect(noEmailRes.status).toBe(400);
+      expect(noEmailRes.body.status).toBe('fail');
 
-      const resEmailInvalido = await request(app)
+      // Caso con correo de formato inválido
+      const invalidEmailRes = await request(app)
         .post('/api/v1/auth/login')
         .send({ correo: 'correo-no-valido', contrasena: 'Password123!' });
 
-      expect(resEmailInvalido.status).toBe(400);
-      expect(resEmailInvalido.body.message || resEmailInvalido.body.mensaje).toMatch(/formato.*correo|correo.*válido/i);
+      expect(invalidEmailRes.status).toBe(400);
+      expect(invalidEmailRes.body.message || invalidEmailRes.body.mensaje).toMatch(/formato.*correo|correo.*válido/i);
     });
   });
 
+  // Escenarios de consulta del perfil autenticado mediante Authorization Bearer o x-token
   describe('GET /api/v1/auth/me', () => {
     it('debe devolver el perfil del usuario autenticado si se provee Bearer Token válido', async () => {
-      await Usuario.create(testUser);
+      await User.create(testUser);
 
       // Iniciar sesión para obtener token
       const loginRes = await request(app)
@@ -142,7 +154,7 @@ describe('Fase 1 — Módulo de Autenticación (GP-01)', () => {
     });
 
     it('debe devolver el perfil si se provee el token mediante la cabecera x-token', async () => {
-      await Usuario.create(testUser);
+      await User.create(testUser);
 
       const loginRes = await request(app)
         .post('/api/v1/auth/login')

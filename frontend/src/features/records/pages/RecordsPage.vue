@@ -1,14 +1,24 @@
 <script setup>
+/**
+ * Página CRUD genérica para todos los módulos de gestión (predios, lotes, cultivos,
+ * insumos, ciclos, labores, semilleros, cosechas, telemetría, notificaciones y usuarios).
+ * Se configura dinámicamente a partir de entityConfig (config.js) según route.name,
+ * delega Predios y Usuarios al backend mediante farms.service.js / users.service.js
+ * y persiste las demás entidades en storage.js.
+ */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { useAuthStore } from '@/stores/auth'
-import { canWrite, visibleFarmIds } from '@/services/permissions'
+import { canAccess, canWrite, visibleFarmIds } from '@/services/permissions'
 import { getRecord, getRecords, removeRecord, saveRecord } from '@/services/storage'
+import { getAuthToken } from '@/services/api'
+import { changeFarmStatus, createFarm, fetchFarms, updateFarm } from '@/services/farms.service'
+import { changeUserStatus, createUser, fetchUsers, updateUser } from '@/services/users.service'
 import { entityConfig } from '@/features/records/config'
 import RecordFormField from '@/features/records/components/RecordFormField.vue'
-import farmPlaceholder from '@/assets/predio-placeholder.svg'
-import lotPlaceholder from '@/assets/lote-placeholder.svg'
+import farmPlaceholder from '@/assets/farm-placeholder.svg'
+import lotPlaceholder from '@/assets/lot-placeholder.svg'
 import { getResponsibleUsers } from '@/services/mock/users'
 
 const route = useRoute()
@@ -61,6 +71,9 @@ const telemetryLotOptions = computed(() => getRecords('lots')
     (!allowedFarmIds.value || allowedFarmIds.value.includes(lot.farmId)))
   .map((lot) => ({ label: lot.name, value: lot.id })))
 
+/**
+ * Resuelve el ID del predio padre de un registro para aplicar el filtrado por alcance del usuario.
+ */
 function relatedFarmId(entity, item) {
   if (entity === 'farms') return item.id
   if (entity === 'lots' || entity === 'cycles' || entity === 'telemetry') return item.farmId
@@ -69,6 +82,10 @@ function relatedFarmId(entity, item) {
   if (entity === 'notifications') return getRecord('lots', item.lotId)?.farmId
   return null
 }
+
+/**
+ * Determina si un registro es visible para el usuario actual según visibleFarmIds().
+ */
 function isVisible(item) {
   if (!allowedFarmIds.value) return true
   const farmId = relatedFarmId(config.value.entity, item)
@@ -79,6 +96,9 @@ function nameOf(entity, id) {
   return getRecord(entity, id)?.name ?? getRecord(entity, id)?.title ?? '—'
 }
 
+/**
+ * Enriquece cada fila con etiquetas legibles y métricas derivadas para la tabla y tarjetas.
+ */
 function displayRow(item) {
   const row = { ...item }
   if (item.area !== undefined) row.areaLabel = `${formatArea(item.area)} HA`
@@ -331,6 +351,9 @@ function rejectImage() {
   $q.notify({ type: 'negative', message: 'La imagen supera el tamaño máximo de 2 MB.' })
 }
 
+/**
+ * Valida reglas de negocio, formatos y coherencia relacional entre entidades antes de guardar.
+ */
 function validateRelations() {
   const value = form.value
   for (const field of config.value.fields.filter((item) => item.type === 'number' && value[item.key] !== '' && value[item.key] !== null && value[item.key] !== undefined)) {
@@ -388,6 +411,7 @@ function validateRelations() {
   if (config.value.entity === 'notifications' && value.lotId) assertFarmAccess(getRecord('lots', value.lotId)?.farmId)
   if (config.value.entity === 'users' && getRecords('users').some((user) => user.email.toLowerCase() === value.email.toLowerCase() && user.id !== editing.value)) throw new Error('Ya existe un usuario con ese correo.')
   if (config.value.entity === 'users' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.email)) throw new Error('Ingresa un correo electrónico válido.')
+  if (config.value.entity === 'users' && value.password && String(value.password).trim().length < 6) throw new Error('La contraseña debe tener al menos 6 caracteres.')
   if (config.value.entity === 'lots') {
     const farm = getRecord('farms', value.farmId)
     const used = getRecords('lots').filter((lot) => lot.farmId === value.farmId && lot.id !== editing.value).reduce((sum, lot) => sum + Number(lot.area || 0), 0)
@@ -406,6 +430,9 @@ function validateRelations() {
   }
 }
 
+/**
+ * Envía el formulario hacia la API (para users y farms con sesión activa) o hacia storage.js.
+ */
 async function submitForm() {
   const valid = await formRef.value?.validate()
   if (!valid) return
@@ -417,7 +444,18 @@ async function submitForm() {
     }
     if (['farms', 'lots'].includes(config.value.entity)) value.image = imageData.value
     if (config.value.entity === 'telemetry') value.simulated = true
-    const saved = saveRecord(config.value.entity, { ...value, id: editing.value })
+    let saved
+    if (config.value.entity === 'users') {
+      saved = editing.value
+        ? await updateUser(editing.value, value)
+        : await createUser(value)
+    } else if (config.value.entity === 'farms' && getAuthToken()) {
+      saved = editing.value
+        ? await updateFarm(editing.value, value)
+        : await createFarm(value)
+    } else {
+      saved = saveRecord(config.value.entity, { ...value, id: editing.value })
+    }
     if (config.value.entity === 'users' && saved.id === auth.currentUser?.id) {
       if (!saved.active) {
         auth.logout()
@@ -464,7 +502,10 @@ function closeDeleteDialog() {
   deleteTimer.value = null
 }
 
-function deleteRecord() {
+/**
+ * Ejecuta la eliminación lógica/remota (users, farms, notifications) o borrado local tras confirmar.
+ */
+async function deleteRecord() {
   const expectedName = rowName(pendingDelete.value)
   const requiresName = !['farms', 'lots'].includes(config.value.entity) || deleteStep.value === 2
   if (!pendingDelete.value || (requiresName && deleteConfirmationText.value.trim() !== expectedName) ||
@@ -473,14 +514,37 @@ function deleteRecord() {
     return
   }
   try {
+    let message = 'Registro eliminado.'
     if (config.value.entity === 'notifications') {
       saveRecord('notifications', { ...pendingDelete.value, deletedAt: new Date().toISOString() })
+      message = 'Notificación movida al Historial.'
+    } else if (config.value.entity === 'users') {
+      const targetId = pendingDelete.value.id
+      if (/^user-/.test(String(targetId)) && !getAuthToken()) {
+        removeRecord('users', targetId)
+      } else {
+        await changeUserStatus(targetId, false)
+        message = 'Usuario desactivado correctamente.'
+      }
+    } else if (config.value.entity === 'farms') {
+      const targetId = pendingDelete.value.id
+      if (/^farm-/.test(String(targetId)) && !getAuthToken()) {
+        removeRecord('farms', targetId)
+      } else {
+        for (const [relatedEntity, field] of [['lots', 'farmId'], ['cycles', 'farmId'], ['telemetry', 'farmId']]) {
+          if (getRecords(relatedEntity).some((item) => item[field] === targetId)) {
+            throw new Error(`No se puede eliminar: todavía existen registros relacionados en ${relatedEntity}.`)
+          }
+        }
+        await changeFarmStatus(targetId, false)
+        message = 'Predio desactivado correctamente.'
+      }
     } else {
       removeRecord(config.value.entity, pendingDelete.value.id)
     }
     closeDeleteDialog()
     pendingDelete.value = null
-    $q.notify({ type: 'positive', message: config.value.entity === 'notifications' ? 'Notificación movida al Historial.' : 'Registro eliminado.' })
+    $q.notify({ type: 'positive', message })
   } catch (error) {
     $q.notify({ type: 'negative', message: error.message })
   }
@@ -519,7 +583,7 @@ function rowDetails(row) {
       ['Usuarios autorizados', getRecords('users').filter((user) => user.farms?.includes(row.id)).map((user) => user.name).join(', ') || 'Sin asignación']
     ]
   }
-  return config.value.fields.map((field) => {
+  return config.value.fields.filter((field) => field.key !== 'password').map((field) => {
     let value = row[field.key]
     if (field.type === 'ref') value = nameOf(field.entity, value)
     if (field.type === 'ref' && field.multiple) value = (row[field.key] ?? []).map((id) => nameOf(field.entity, id)).join(', ')
@@ -532,11 +596,34 @@ onBeforeUnmount(() => {
   if (deleteTimer.value) clearTimeout(deleteTimer.value)
 })
 
+/**
+ * Sincroniza silenciosamente usuarios y predios desde el backend al entrar en módulos dependientes.
+ */
+async function syncRemoteUsersIfNeeded() {
+  if (!getAuthToken()) return
+  const entity = config.value?.entity
+  if (['users', 'farms'].includes(entity) && auth.currentUser?.role !== 'Operario') {
+    try {
+      await fetchUsers()
+    } catch {
+      // Conservar registros en caché local si falla la sincronización remota
+    }
+  }
+  if (['farms', 'lots', 'cycles', 'telemetry', 'users'].includes(entity)) {
+    try {
+      await fetchFarms()
+    } catch {
+      // Conservar predios en caché local si falla la sincronización remota
+    }
+  }
+}
+
 watch(() => [route.name, route.query.farm, route.query.cycle], () => {
   search.value = ''
   enumFilter.value = ''
   notificationView.value = 'active'
-})
+  syncRemoteUsersIfNeeded()
+}, { immediate: true })
 </script>
 
 <template>
@@ -687,7 +774,7 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
         </div>
       </div>
       <div v-if="config.entity === 'telemetry'" class="simulation-note"><q-icon name="info" /> Todas las lecturas de esta pantalla son simuladas para demostración.</div>
-      <div v-if="config.entity === 'users'" class="simulation-note"><q-icon name="info" /> Crear un usuario aquí no genera credenciales. El acceso seguro y alta de cuentas requieren el backend.</div>
+      <div v-if="config.entity === 'users'" class="simulation-note"><q-icon name="info" /> Los cambios de usuarios se sincronizan con el servidor. Si no defines una contraseña al crear la cuenta, se asignará <strong>Agro2026!</strong> por defecto.</div>
     </q-card>
 
     <q-dialog v-model="dialog">
@@ -713,7 +800,7 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
               </q-step>
             </q-stepper>
             <template v-else>
-              <div v-for="field in config.fields" :key="field.key" class="form-field">
+              <div v-for="field in config.fields.filter(f => !(editing && config.entity === 'users' && f.key === 'password'))" :key="field.key" class="form-field">
                 <label :for="`field-${field.key}`">{{ field.label }}<span v-if="field.required"> *</span></label>
                 <RecordFormField v-model="form[field.key]" :field="field" :options="fieldOptions(field)" :disabled="field.key === 'lotId' && !form.farmId" />
                 <div v-if="field.key === 'area' && lotAreaGuidance" class="area-guidance" :class="{ 'area-guidance-over': lotAreaGuidance.exceedsAvailable }">

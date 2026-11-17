@@ -1,4 +1,8 @@
 <script setup>
+/**
+ * Campo dinámico de formulario reutilizado por RecordsPage.vue según la definición de config.js.
+ * Renderiza selectores relacionales/enumerados o inputs con saneamiento y botones +/- numéricos.
+ */
 import { computed } from 'vue'
 
 const props = defineProps({
@@ -8,12 +12,16 @@ const props = defineProps({
 })
 
 const model = defineModel()
+
+// Paso de incremento para controles numéricos (0.1 por defecto en áreas en hectáreas)
 const numberStep = computed(() => {
   const configuredStep = Number(props.field.step)
   if (Number.isFinite(configuredStep) && configuredStep > 0) return configuredStep
   if (props.field.integer) return 1
   return props.field.key === 'area' ? 0.1 : 1
 })
+
+// Reglas de validación en tiempo real para Quasar según los metadatos del campo
 const inputRules = computed(() => [
   ...(props.field.required ? [value => (value !== '' && value !== null && value !== undefined) || 'Este campo es obligatorio'] : []),
   ...(props.field.maxLength ? [value => !value || String(value).length <= props.field.maxLength || `Usa máximo ${props.field.maxLength} caracteres`] : []),
@@ -26,6 +34,9 @@ const inputRules = computed(() => [
   ] : [])
 ])
 
+/**
+ * Normaliza y sanea la entrada del usuario antes de actualizar v-model (texto puro o decimal único).
+ */
 function updateValue(value) {
   let nextValue = value
   if (props.field.textOnly) nextValue = String(value ?? '').replace(/[^\p{L}\p{M}\s.'-]/gu, '')
@@ -40,6 +51,9 @@ function updateValue(value) {
   model.value = nextValue
 }
 
+/**
+ * Incrementa o decrementa el valor numérico respetando los límites min/max del campo.
+ */
 function adjustNumber(direction) {
   const currentValue = Number(String(model.value ?? '').replace(',', '.'))
   const startingValue = Number.isFinite(currentValue) ? currentValue : Number(props.field.min ?? 0)

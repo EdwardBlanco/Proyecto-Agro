@@ -1,3 +1,7 @@
+/**
+ * Diccionario declarativo de configuración por entidad para RecordsPage.vue y RecordFormField.vue.
+ * Define columnas de tabla/tarjeta, campos de formulario, validaciones y relaciones entre módulos.
+ */
 const ref = (entity) => ({ entity })
 
 export const entityConfig = {
@@ -124,11 +128,12 @@ export const entityConfig = {
     ]
   },
   users: {
-    entity: 'users', singular: 'usuario', title: 'Usuarios y permisos', description: 'Administra cuentas locales de demostración y su acceso a predios.',
+    entity: 'users', singular: 'usuario', title: 'Usuarios y permisos', description: 'Administra cuentas del sistema y su acceso a predios.',
     columns: [['name', 'Nombre'], ['email', 'Correo'], ['role', 'Rol'], ['farmsLabel', 'Predios asignados'], ['activeLabel', 'Estado']],
     fields: [
       { key: 'name', label: 'Nombre completo', required: true, maxLength: 40 },
       { key: 'email', label: 'Correo', type: 'email', required: true },
+      { key: 'password', label: 'Contraseña inicial (opcional, por defecto Agro2026!)', maxLength: 60 },
       { key: 'role', label: 'Rol', type: 'select', options: ['SuperAdmin', 'Admin', 'Operario'], required: true },
       { key: 'farms', label: 'Predios autorizados', type: 'farms', multiple: true },
       { key: 'active', label: 'Estado', type: 'select-value', options: [{ label: 'Activo', value: true }, { label: 'Inactivo', value: false }], required: true }

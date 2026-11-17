@@ -1,6 +1,10 @@
 import mongoose from 'mongoose';
 
-const predioSchema = new mongoose.Schema(
+/**
+ * Esquema Mongoose para la colección 'predios'.
+ * Define los datos geográficos, extensión y estado operativo de cada predio agrícola.
+ */
+const farmSchema = new mongoose.Schema(
   {
     nombre: {
       type: String,
@@ -42,23 +46,28 @@ const predioSchema = new mongoose.Schema(
   }
 );
 
-predioSchema.index({ nombre: 1 });
-predioSchema.index({ estado: 1 });
+// Índices para optimizar búsquedas por nombre y filtrado por estado activo/inactivo
+farmSchema.index({ nombre: 1 });
+farmSchema.index({ estado: 1 });
 
-predioSchema.set('toJSON', {
+// Transformaciones de serialización para omitir el campo interno de versión __v
+farmSchema.set('toJSON', {
   transform: (doc, ret) => {
     delete ret.__v;
     return ret;
   }
 });
 
-predioSchema.set('toObject', {
+farmSchema.set('toObject', {
   transform: (doc, ret) => {
     delete ret.__v;
     return ret;
   }
 });
 
-export const Predio = mongoose.models.Predio || mongoose.model('Predio', predioSchema);
+/**
+ * Modelo Mongoose de Predio vinculado a la colección 'predios'.
+ */
+export const Farm = mongoose.models.Farm || mongoose.model('Farm', farmSchema);
 
-export default Predio;
+export default Farm;

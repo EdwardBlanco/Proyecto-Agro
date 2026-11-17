@@ -1,49 +1,49 @@
-import { Usuario } from '../models/Usuario.model.js';
+import { User } from '../models/User.model.js';
 
 /**
- * Obtiene las métricas e indicadores del dashboard adaptados al rol del usuario autenticado
+ * Obtiene las métricas e indicadores del dashboard adaptados al rol del usuario autenticado.
  *
- * @param {Object} usuarioAutenticado - Objeto de usuario autenticado (req.user o req.usuario)
- * @returns {Promise<Object>} Datos del resumen del dashboard
+ * @param {Object} authenticatedUser - Objeto de usuario autenticado inyectado por validateJwt (req.user o req.usuario)
+ * @returns {Promise<Object>} Datos del resumen del dashboard según el rol
  */
-export const obtenerResumenDashboard = async (usuarioAutenticado) => {
-  const rol = usuarioAutenticado.rol;
+export const getDashboardSummary = async (authenticatedUser) => {
+  const role = authenticatedUser.rol;
   const timestamp = new Date().toISOString();
 
   // Si el usuario es administrador o superadmin, tiene acceso a métricas globales de gestión
-  if (rol === 'superadmin' || rol === 'administrador') {
+  if (role === 'superadmin' || role === 'administrador') {
     const [
-      totalUsuarios,
-      usuariosActivos,
-      usuariosInactivos,
+      totalUsers,
+      activeUsers,
+      inactiveUsers,
       totalSuperadmins,
-      totalAdministradores,
-      totalOperarios
+      totalAdmins,
+      totalOperators
     ] = await Promise.all([
-      Usuario.countDocuments(),
-      Usuario.countDocuments({ estado: true }),
-      Usuario.countDocuments({ estado: false }),
-      Usuario.countDocuments({ rol: 'superadmin' }),
-      Usuario.countDocuments({ rol: 'administrador' }),
-      Usuario.countDocuments({ rol: 'operario' })
+      User.countDocuments(),
+      User.countDocuments({ estado: true }),
+      User.countDocuments({ estado: false }),
+      User.countDocuments({ rol: 'superadmin' }),
+      User.countDocuments({ rol: 'administrador' }),
+      User.countDocuments({ rol: 'operario' })
     ]);
 
     return {
-      rol,
+      rol: role,
       usuario: {
-        id: usuarioAutenticado._id,
-        nombre: usuarioAutenticado.nombre,
-        correo: usuarioAutenticado.correo
+        id: authenticatedUser._id,
+        nombre: authenticatedUser.nombre,
+        correo: authenticatedUser.correo
       },
       indicadores: {
         usuarios: {
-          total: totalUsuarios,
-          activos: usuariosActivos,
-          inactivos: usuariosInactivos,
+          total: totalUsers,
+          activos: activeUsers,
+          inactivos: inactiveUsers,
           por_rol: {
             superadmin: totalSuperadmins,
-            administrador: totalAdministradores,
-            operario: totalOperarios
+            administrador: totalAdmins,
+            operario: totalOperators
           }
         }
       },
@@ -53,11 +53,11 @@ export const obtenerResumenDashboard = async (usuarioAutenticado) => {
 
   // Si el usuario es operario, recibe un resumen contextual para su rol operativo
   return {
-    rol,
+    rol: role,
     usuario: {
-      id: usuarioAutenticado._id,
-      nombre: usuarioAutenticado.nombre,
-      correo: usuarioAutenticado.correo
+      id: authenticatedUser._id,
+      nombre: authenticatedUser.nombre,
+      correo: authenticatedUser.correo
     },
     indicadores: {
       predios_asignados: 0,
@@ -69,5 +69,5 @@ export const obtenerResumenDashboard = async (usuarioAutenticado) => {
 };
 
 export default {
-  obtenerResumenDashboard
+  getDashboardSummary
 };

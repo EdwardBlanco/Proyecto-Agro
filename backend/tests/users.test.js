@@ -1,22 +1,29 @@
+/**
+ * Pruebas de integración del módulo de usuarios (/api/v1/usuarios).
+ * Cubre creación, validación de duplicados, listado con filtros, consulta por ID,
+ * actualización de datos, cambio de estado lógico y cambio de contraseña propia.
+ */
 import request from 'supertest';
 import app from '../src/app.js';
-import { Usuario } from '../src/models/Usuario.model.js';
+import { User } from '../src/models/User.model.js';
 import { connectTestDb, clearTestDb, disconnectTestDb } from '../src/shared/testUtils/testDb.js';
 
 describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
   let authToken;
   let adminUser;
 
+  // Conectar a la base de datos de pruebas al iniciar la suite
   beforeAll(async () => {
     await connectTestDb();
   });
 
+  // Limpiar BD, crear usuario superadmin base y obtener su token antes de cada prueba
   beforeEach(async () => {
     await clearTestDb();
-    await Usuario.init();
+    await User.init();
 
     // Crear usuario admin base y obtener token para rutas protegidas
-    adminUser = await Usuario.create({
+    adminUser = await User.create({
       nombre: 'Administrador Principal',
       correo: 'admin@agro.com',
       contrasena_hash: 'AdminSecret123!',
@@ -34,14 +41,16 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
     authToken = loginRes.body.data.token;
   });
 
+  // Limpiar colecciones y cerrar la conexión al finalizar
   afterAll(async () => {
     await clearTestDb();
     await disconnectTestDb();
   });
 
+  // Escenarios de creación de usuarios, unicidad de correo y validaciones de entrada
   describe('POST /api/v1/usuarios', () => {
     it('debe crear un usuario exitosamente y retornar 201 sin exponer contrasena_hash', async () => {
-      const nuevoUsuario = {
+      const newUser = {
         nombre: 'Pedro Operario',
         correo: 'pedro@agro.com',
         contrasena: 'OperarioPass123!',
@@ -51,7 +60,7 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
       const res = await request(app)
         .post('/api/v1/usuarios')
         .set('Authorization', `Bearer ${authToken}`)
-        .send(nuevoUsuario);
+        .send(newUser);
 
       expect(res.status).toBe(201);
       expect(res.body.status).toBe('success');
@@ -64,7 +73,7 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
     });
 
     it('debe rechazar con 409 Conflict si el correo ya está registrado', async () => {
-      await Usuario.create({
+      await User.create({
         nombre: 'Usuario Duplicado',
         correo: 'duplicado@agro.com',
         contrasena_hash: 'Pass123456!',
@@ -87,7 +96,8 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
     });
 
     it('debe rechazar con 400 si los datos de entrada son inválidos', async () => {
-      const resSinNombre = await request(app)
+      // Falta el campo obligatorio nombre
+      const missingNameRes = await request(app)
         .post('/api/v1/usuarios')
         .set('Authorization', `Bearer ${authToken}`)
         .send({
@@ -95,9 +105,10 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
           contrasena: 'Pass123456!'
         });
 
-      expect(resSinNombre.status).toBe(400);
+      expect(missingNameRes.status).toBe(400);
 
-      const resPasswordCorta = await request(app)
+      // Contraseña demasiado corta
+      const shortPasswordRes = await request(app)
         .post('/api/v1/usuarios')
         .set('Authorization', `Bearer ${authToken}`)
         .send({
@@ -106,9 +117,10 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
           contrasena: '123'
         });
 
-      expect(resPasswordCorta.status).toBe(400);
+      expect(shortPasswordRes.status).toBe(400);
 
-      const resRolInvalido = await request(app)
+      // Rol fuera del catálogo permitido
+      const invalidRoleRes = await request(app)
         .post('/api/v1/usuarios')
         .set('Authorization', `Bearer ${authToken}`)
         .send({
@@ -118,7 +130,7 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
           rol: 'rol_fantasma'
         });
 
-      expect(resRolInvalido.status).toBe(400);
+      expect(invalidRoleRes.status).toBe(400);
     });
 
     it('debe rechazar con 401 si no se envía token de autenticación', async () => {
@@ -134,9 +146,10 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
     });
   });
 
+  // Escenarios de listado paginado y filtrado por rol
   describe('GET /api/v1/usuarios', () => {
     it('debe listar los usuarios con paginación y permitir filtros por rol y estado', async () => {
-      await Usuario.create([
+      await User.create([
         { nombre: 'Op 1', correo: 'op1@agro.com', contrasena_hash: 'Pass123456!', rol: 'operario', estado: true },
         { nombre: 'Op 2', correo: 'op2@agro.com', contrasena_hash: 'Pass123456!', rol: 'operario', estado: false },
         { nombre: 'Admin 2', correo: 'admin2@agro.com', contrasena_hash: 'Pass123456!', rol: 'administrador', estado: true }
@@ -151,13 +164,14 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
       expect(res.body.data).toHaveProperty('usuarios');
       expect(Array.isArray(res.body.data.usuarios)).toBe(true);
       expect(res.body.data.total).toBe(2);
-      expect(res.body.data.usuarios.every((u) => u.rol === 'operario')).toBe(true);
+      expect(res.body.data.usuarios.every((user) => user.rol === 'operario')).toBe(true);
     });
   });
 
+  // Escenarios de consulta individual por ID
   describe('GET /api/v1/usuarios/:id', () => {
     it('debe retornar un usuario existente por su ID', async () => {
-      const user = await Usuario.create({
+      const user = await User.create({
         nombre: 'Consulta Test',
         correo: 'consulta@agro.com',
         contrasena_hash: 'Pass123456!',
@@ -184,9 +198,10 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
     });
   });
 
+  // Escenarios de actualización de datos y conflicto de correo duplicado
   describe('PATCH /api/v1/usuarios/:id', () => {
     it('debe actualizar los datos permitidos del usuario', async () => {
-      const user = await Usuario.create({
+      const user = await User.create({
         nombre: 'Nombre Anterior',
         correo: 'anterior@agro.com',
         contrasena_hash: 'Pass123456!',
@@ -207,14 +222,14 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
     });
 
     it('debe rechazar con 409 si se intenta cambiar el correo a uno que ya pertenece a otro usuario', async () => {
-      await Usuario.create({
+      await User.create({
         nombre: 'Usuario Existente',
         correo: 'existente@agro.com',
         contrasena_hash: 'Pass123456!',
         rol: 'operario'
       });
 
-      const user = await Usuario.create({
+      const user = await User.create({
         nombre: 'Usuario A Modificar',
         correo: 'modificar@agro.com',
         contrasena_hash: 'Pass123456!',
@@ -231,36 +246,37 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
     });
   });
 
+  // Escenarios de activación y desactivación lógica de usuarios
   describe('PATCH /api/v1/usuarios/:id/estado', () => {
     it('debe desactivar y activar lógicamente un usuario', async () => {
-      const user = await Usuario.create({
+      const user = await User.create({
         nombre: 'Usuario Estado',
         correo: 'estado@agro.com',
         contrasena_hash: 'Pass123456!',
         estado: true
       });
 
-      // Desactivar
-      const resDesactivar = await request(app)
+      // Desactivar usuario
+      const deactivateRes = await request(app)
         .patch(`/api/v1/usuarios/${user._id}/estado`)
         .set('Authorization', `Bearer ${authToken}`)
         .send({ estado: false });
 
-      expect(resDesactivar.status).toBe(200);
-      expect(resDesactivar.body.data.estado).toBe(false);
+      expect(deactivateRes.status).toBe(200);
+      expect(deactivateRes.body.data.estado).toBe(false);
 
-      // Reactivar
-      const resReactivar = await request(app)
+      // Reactivar usuario
+      const reactivateRes = await request(app)
         .patch(`/api/v1/usuarios/${user._id}/estado`)
         .set('Authorization', `Bearer ${authToken}`)
         .send({ estado: true });
 
-      expect(resReactivar.status).toBe(200);
-      expect(resReactivar.body.data.estado).toBe(true);
+      expect(reactivateRes.status).toBe(200);
+      expect(reactivateRes.body.data.estado).toBe(true);
     });
 
     it('debe rechazar con 400 si el campo estado no es un booleano', async () => {
-      const user = await Usuario.create({
+      const user = await User.create({
         nombre: 'Usuario Estado Invalido',
         correo: 'invalido_estado@agro.com',
         contrasena_hash: 'Pass123456!'
@@ -275,6 +291,7 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
     });
   });
 
+  // Escenarios de cambio de contraseña del usuario autenticado
   describe('PATCH /api/v1/usuarios/me/contrasena', () => {
     it('debe permitir cambiar la contraseña si la actual es correcta y permitir login con la nueva', async () => {
       const res = await request(app)
@@ -289,25 +306,25 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
       expect(res.body.status).toBe('success');
 
       // Intentar login con la clave anterior (debe fallar 401)
-      const resLoginViejo = await request(app)
+      const oldLoginRes = await request(app)
         .post('/api/v1/auth/login')
         .send({
           correo: 'admin@agro.com',
           contrasena: 'AdminSecret123!'
         });
 
-      expect(resLoginViejo.status).toBe(401);
+      expect(oldLoginRes.status).toBe(401);
 
       // Intentar login con la nueva contraseña (debe ser exitoso 200)
-      const resLoginNuevo = await request(app)
+      const newLoginRes = await request(app)
         .post('/api/v1/auth/login')
         .send({
           correo: 'admin@agro.com',
           contrasena: 'NuevaClaveSuperSegura2026!'
         });
 
-      expect(resLoginNuevo.status).toBe(200);
-      expect(resLoginNuevo.body.data).toHaveProperty('token');
+      expect(newLoginRes.status).toBe(200);
+      expect(newLoginRes.body.data).toHaveProperty('token');
     });
 
     it('debe rechazar con 400 si la contraseña actual no coincide', async () => {

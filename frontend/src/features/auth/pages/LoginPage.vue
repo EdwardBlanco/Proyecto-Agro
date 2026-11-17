@@ -1,4 +1,8 @@
 <script setup>
+/**
+ * Pantalla de inicio de sesión (/login) y vista informativa de recuperación de acceso.
+ * Delega la autenticación real al store auth.js y redirige al dashboard al completarse.
+ */
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
@@ -14,6 +18,9 @@ const showPassword = ref(false)
 const recovering = ref(false)
 const busy = ref(false)
 
+/**
+ * Valida los campos locales, invoca auth.login() contra el backend y redirige al panel principal.
+ */
 async function submit() {
   if (!email.value.trim() || !password.value) {
     $q.notify({ type: 'negative', message: 'Ingresa tu usuario y contraseña.' })
@@ -21,10 +28,10 @@ async function submit() {
   }
   busy.value = true
   try {
-    auth.login(email.value, password.value, remember.value)
+    await auth.login(email.value, password.value, remember.value)
     await router.push('/')
   } catch (error) {
-    $q.notify({ type: 'negative', message: error.message })
+    $q.notify({ type: 'negative', message: error.message || 'No fue posible iniciar sesión.' })
   } finally {
     busy.value = false
   }
