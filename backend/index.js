@@ -6,21 +6,22 @@ import { seedDemoUsers } from './src/config/seed.js';
 
 const PORT = config.port || process.env.PORT || 3000;
 
-// Conecta a MongoDB, inicializa usuarios demo fuera de test y levanta el servidor HTTP
-connectDB().then(async () => {
-  if (config.nodeEnv !== 'test') {
-    try {
-      await seedDemoUsers();
-    } catch (error) {
-      console.error('Error al inicializar usuarios demo:', error.message);
+// En entorno local conecta a MongoDB, inicializa usuarios demo fuera de test y levanta el servidor HTTP.
+// En Vercel Serverless, la conexión y seed inicial se gestionan por petición en src/app.js.
+if (!process.env.VERCEL) {
+  connectDB().then(async () => {
+    if (config.nodeEnv !== 'test') {
+      try {
+        await seedDemoUsers();
+      } catch (error) {
+        console.error('Error al inicializar usuarios demo:', error.message);
+      }
     }
-  }
 
-  if (!process.env.VERCEL) {
     app.listen(PORT, () => {
       console.log(`Servidor corriendo en http://localhost:${PORT}`);
     });
-  }
-});
+  });
+}
 
 export default app;

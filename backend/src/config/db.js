@@ -21,22 +21,34 @@ export const getDatabaseStatus = () => {
   return DB_CONNECTION_STATES[stateCode] || 'unknown';
 };
 
+let connectionPromise = null;
+
 /**
  * Establece la conexión principal con MongoDB usando la URI configurada en el entorno.
- * En entornos distintos a 'test', finaliza el proceso si la conexión falla.
- * @returns {Promise<import('mongoose').Mongoose|null>} Instancia de Mongoose o null en entorno de pruebas
+ * En entornos distintos a 'test' y fuera de Vercel Serverless, finaliza el proceso si la conexión falla.
+ * @returns {Promise<import('mongoose').Mongoose|null>} Instancia de Mongoose o null si falla en test/serverless
  */
 export const connectDB = async () => {
+  if (mongoose.connection.readyState === 1) {
+    return mongoose;
+  }
+
+  if (connectionPromise) {
+    return connectionPromise;
+  }
+
   try {
     const mongoUri = config.mongoUri || process.env.MONGO_URI || process.env.MONGODB_URI;
-    const conn = await mongoose.connect(mongoUri, {
+    connectionPromise = mongoose.connect(mongoUri, {
       serverSelectionTimeoutMS: 5000
     });
+    const conn = await connectionPromise;
     console.log("MongoDB conectado correctamente");
     return conn;
   } catch (error) {
+    connectionPromise = null;
     console.error("Error al conectar a MongoDB:", error.message);
-    if (config.nodeEnv !== "test") {
+    if (config.nodeEnv !== "test" && !process.env.VERCEL) {
       process.exit(1);
     }
     return null;
