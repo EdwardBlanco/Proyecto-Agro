@@ -29,14 +29,16 @@ const placeholder = computed(() => props.field.placeholder ??
       ? `Selecciona ${props.field.label.toLocaleLowerCase()}`
       : props.field.type === 'textarea'
         ? `Describe ${props.field.label.toLocaleLowerCase()}`
-        : props.field.type === 'date' || props.field.type === 'datetime-local'
-          ? 'Selecciona fecha y hora'
+        : props.field.type === 'date' || props.field.type === 'datetime-local' || props.field.type === 'time'
+          ? 'Selecciona fecha u hora'
           : `Ingresa ${props.field.label.toLocaleLowerCase()}`))
 const inputType = computed(() => props.field.type === 'password'
   ? passwordVisible.value ? 'text' : 'password'
   : props.field.type === 'textarea' ? 'textarea'
     : props.field.type === 'date' ? 'date'
-      : props.field.type === 'datetime-local' ? 'datetime-local' : 'text')
+      : props.field.type === 'datetime-local' ? 'datetime-local'
+        : props.field.type === 'time' ? 'time'
+          : props.field.type === 'url' ? 'url' : 'text')
 
 // Reglas de validación en tiempo real para Quasar según los metadatos del campo
 const inputRules = computed(() => [
@@ -45,6 +47,14 @@ const inputRules = computed(() => [
   ...(props.field.maxLength ? [value => !value || String(value).length <= props.field.maxLength || `Usa máximo ${props.field.maxLength} caracteres`] : []),
   ...(props.field.textOnly ? [value => !value || /^[\p{L}\p{M}\s.'-]+$/u.test(value) || 'Ingresa solo texto, sin números ni símbolos'] : []),
   ...(props.field.type === 'email' ? [value => !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) || 'Ingresa un correo electrónico válido'] : []),
+  ...(props.field.type === 'url' ? [value => {
+    if (!value) return true
+    try {
+      return ['http:', 'https:'].includes(new URL(value).protocol) || 'Ingresa una URL HTTP o HTTPS válida'
+    } catch {
+      return 'Ingresa una URL HTTP o HTTPS válida'
+    }
+  }] : []),
   ...(props.field.type === 'password' ? [value => !value || String(value).length >= 6 || 'La contraseña debe tener al menos 6 caracteres'] : []),
   ...(props.field.type === 'number' ? [
     value => value === '' || value === null || Number.isFinite(Number(String(value).replace(',', '.'))) || 'Ingresa un número válido',
@@ -88,12 +98,117 @@ function adjustNumber(direction) {
     : Number.POSITIVE_INFINITY
   const maximum = Math.min(props.field.max ?? Number.POSITIVE_INFINITY, lengthLimit)
   const nextValue = Math.min(maximum, Math.max(minimum, startingValue + direction * numberStep.value))
-  model.value = Number(nextValue.toFixed(3))
+  const precision = Math.min(String(numberStep.value).split('.')[1]?.length ?? 0, 8)
+  model.value = Number(nextValue.toFixed(precision))
+}
+
+function updateArrayItem(index, key, value) {
+  const next = Array.isArray(model.value) ? [...model.value] : []
+  next[index] = { ...(next[index] ?? {}), [key]: value }
+  model.value = next
+}
+
+function addApplication() {
+  const next = Array.isArray(model.value) ? [...model.value] : []
+  next.push({
+    inputId: '',
+    batchNumber: '',
+    expirationDate: '',
+    quantity: '',
+    quantityUnit: '',
+    dose: '',
+    doseUnit: '',
+    method: '',
+    equipment: '',
+    preharvestIntervalDays: '',
+    reentryIntervalDays: '',
+    technicalRecommendation: ''
+  })
+  model.value = next
+}
+
+function addTraining() {
+  const next = Array.isArray(model.value) ? [...model.value] : []
+  next.push({ title: '', date: '', provider: '' })
+  model.value = next
+}
+
+function removeArrayItem(index) {
+  const next = Array.isArray(model.value) ? [...model.value] : []
+  next.splice(index, 1)
+  model.value = next
 }
 </script>
 
 <template>
-  <div v-if="field.type === 'emoji'" class="emoji-picker-control">
+  <div v-if="field.type === 'application-products'" class="repeatable-field">
+    <article v-for="(application, index) in model || []" :key="index" class="repeatable-card">
+      <div class="repeatable-card-heading">
+        <strong>Producto aplicado {{ index + 1 }}</strong>
+        <q-btn flat round dense icon="delete_outline" color="negative" :disable="disabled" :aria-label="`Quitar producto aplicado ${index + 1}`" @click="removeArrayItem(index)" />
+      </div>
+      <div class="repeatable-grid">
+        <label class="repeatable-control repeatable-control-wide">Producto
+          <q-select :model-value="application.inputId" outlined dense emit-value map-options :options="options" placeholder="Selecciona el producto" :disable="disabled" @update:model-value="updateArrayItem(index, 'inputId', $event)" />
+        </label>
+        <label class="repeatable-control">Lote del producto
+          <q-input :model-value="application.batchNumber" outlined dense maxlength="80" placeholder="Si está disponible" :disable="disabled" @update:model-value="updateArrayItem(index, 'batchNumber', $event)" />
+        </label>
+        <label class="repeatable-control">Vencimiento
+          <q-input :model-value="application.expirationDate" type="date" outlined dense :disable="disabled" @update:model-value="updateArrayItem(index, 'expirationDate', $event)" />
+        </label>
+        <label class="repeatable-control">Cantidad aplicada
+          <q-input :model-value="application.quantity" type="number" min="0.01" step="0.01" outlined dense inputmode="decimal" :disable="disabled" @update:model-value="updateArrayItem(index, 'quantity', $event)" />
+        </label>
+        <label class="repeatable-control">Unidad de cantidad
+          <q-select :model-value="application.quantityUnit" outlined dense emit-value map-options :options="['kg', 'g', 'L', 'mL', 'unidades']" placeholder="Selecciona" :disable="disabled" @update:model-value="updateArrayItem(index, 'quantityUnit', $event)" />
+        </label>
+        <label class="repeatable-control">Dosis
+          <q-input :model-value="application.dose" type="number" min="0.01" step="0.01" outlined dense inputmode="decimal" :disable="disabled" @update:model-value="updateArrayItem(index, 'dose', $event)" />
+        </label>
+        <label class="repeatable-control">Unidad de dosis
+          <q-select :model-value="application.doseUnit" outlined dense emit-value map-options :options="['kg/ha', 'g/ha', 'L/ha', 'mL/ha', 'g/L', 'mL/L', 'otra']" placeholder="Selecciona" :disable="disabled" @update:model-value="updateArrayItem(index, 'doseUnit', $event)" />
+        </label>
+        <label class="repeatable-control repeatable-control-wide">Método de aplicación
+          <q-select :model-value="application.method" outlined dense emit-value map-options :options="['Foliar', 'Al suelo', 'Fertirriego', 'Drench', 'Otro']" placeholder="Selecciona el método" :disable="disabled" @update:model-value="updateArrayItem(index, 'method', $event)" />
+        </label>
+        <label class="repeatable-control repeatable-control-wide">Equipo utilizado
+          <q-input :model-value="application.equipment" outlined dense maxlength="120" placeholder="Equipo empleado, si aplica" :disable="disabled" @update:model-value="updateArrayItem(index, 'equipment', $event)" />
+        </label>
+        <label class="repeatable-control">Período de carencia (días, si aplica)
+          <q-input :model-value="application.preharvestIntervalDays" type="number" min="0" step="1" outlined dense inputmode="numeric" :disable="disabled" @update:model-value="updateArrayItem(index, 'preharvestIntervalDays', $event)" />
+        </label>
+        <label class="repeatable-control">Período de reentrada (días, si aplica)
+          <q-input :model-value="application.reentryIntervalDays" type="number" min="0" step="1" outlined dense inputmode="numeric" :disable="disabled" @update:model-value="updateArrayItem(index, 'reentryIntervalDays', $event)" />
+        </label>
+        <label class="repeatable-control repeatable-control-wide">Referencia de recomendación técnica (si aplica)
+          <q-input :model-value="application.technicalRecommendation" type="textarea" outlined dense maxlength="300" :disable="disabled" @update:model-value="updateArrayItem(index, 'technicalRecommendation', $event)" />
+        </label>
+      </div>
+    </article>
+    <q-btn outline no-caps icon="add" label="Agregar producto aplicado" :disable="disabled" @click="addApplication" />
+  </div>
+  <div v-else-if="field.type === 'training-records'" class="repeatable-field">
+    <article v-for="(training, index) in model || []" :key="index" class="repeatable-card">
+      <div class="repeatable-card-heading">
+        <strong>Capacitación {{ index + 1 }}</strong>
+        <q-btn flat round dense icon="delete_outline" color="negative" :disable="disabled" :aria-label="`Quitar capacitación ${index + 1}`" @click="removeArrayItem(index)" />
+      </div>
+      <div class="repeatable-grid">
+        <label class="repeatable-control">Tema de capacitación
+          <q-input :model-value="training.title" outlined dense maxlength="120" :disable="disabled" @update:model-value="updateArrayItem(index, 'title', $event)" />
+        </label>
+        <label class="repeatable-control">Fecha
+          <q-input :model-value="training.date" type="date" outlined dense :disable="disabled" @update:model-value="updateArrayItem(index, 'date', $event)" />
+        </label>
+        <label class="repeatable-control repeatable-control-wide">Capacitador o institución (si se conoce)
+          <q-input :model-value="training.provider" outlined dense maxlength="120" :disable="disabled" @update:model-value="updateArrayItem(index, 'provider', $event)" />
+        </label>
+      </div>
+    </article>
+    <q-btn outline no-caps icon="add" label="Agregar capacitación" :disable="disabled" @click="addTraining" />
+  </div>
+  <div v-else-if="field.type === 'emoji'" class="emoji-picker-control">
     <span class="emoji-picker-preview">{{ model || field.default }}</span>
     <q-btn :id="`field-${field.key}`" type="button" outline no-caps class="emoji-picker-trigger">
       <span>Elegir emoji</span>

@@ -26,10 +26,10 @@ router.use(validateJwt);
 // Cambio de contraseña del propio usuario autenticado
 router.patch('/me/contrasena', changePasswordValidator, validateFields, changePassword);
 
-// Rutas administrativas (restringidas a superadmin y administrador)
+// La administración y consulta del directorio de usuarios son exclusivas del superadmin
 router.post(
   '/',
-  authorizeRole('superadmin', 'administrador'),
+  authorizeRole('superadmin'),
   createUserValidator,
   validateFields,
   createUser
@@ -37,13 +37,13 @@ router.post(
 
 router.get(
   '/',
-  authorizeRole('superadmin', 'administrador'),
+  authorizeRole('superadmin'),
   listUsers
 );
 
 router.get(
   '/:id',
-  authorizeRole('superadmin', 'administrador'),
+  authorizeRole('superadmin'),
   idValidator,
   validateFields,
   getUserById
@@ -51,7 +51,7 @@ router.get(
 
 router.patch(
   '/:id/estado',
-  authorizeRole('superadmin', 'administrador'),
+  authorizeRole('superadmin'),
   [...idValidator, ...changeUserStatusValidator],
   validateFields,
   changeUserStatus
@@ -59,7 +59,7 @@ router.patch(
 
 router.patch(
   '/:id',
-  authorizeRole('superadmin', 'administrador'),
+  authorizeRole('superadmin'),
   [...idValidator, ...updateUserValidator],
   validateFields,
   updateUser

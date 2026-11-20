@@ -12,6 +12,8 @@ import LoginPage from '@/features/auth/pages/LoginPage.vue'
 import DashboardPage from '@/features/dashboard/pages/DashboardPage.vue'
 import RecordsPage from '@/features/records/pages/RecordsPage.vue'
 import CycleDetailPage from '@/features/records/pages/CycleDetailPage.vue'
+import AgriculturalCalendarPage from '@/features/calendar/pages/AgriculturalCalendarPage.vue'
+import OperatorDashboardPage from '@/features/operator/pages/OperatorDashboardPage.vue'
 
 // Definición de rutas públicas (login) y rutas protegidas bajo AppLayout
 const routes = [
@@ -22,10 +24,12 @@ const routes = [
     meta: { requiresAuth: true },
     children: [
       { path: '', name: 'dashboard', component: DashboardPage, meta: { module: 'dashboard', title: 'Resumen' } },
+      { path: 'my-day', name: 'operator-dashboard', component: OperatorDashboardPage, meta: { module: 'dashboard', title: 'Mi jornada' } },
       { path: 'farms', name: 'farms', component: RecordsPage, meta: { module: 'farms', title: 'Predios y lotes' } },
       { path: 'farms/:farmId/lots', name: 'lots', component: RecordsPage, meta: { module: 'lots', title: 'Lotes' } },
       { path: 'crops', name: 'crops', component: RecordsPage, meta: { module: 'crops', title: 'Cultivos' } },
       { path: 'inputs', name: 'inputs', component: RecordsPage, meta: { module: 'inputs', title: 'Insumos' } },
+      { path: 'calendar', name: 'calendar', component: AgriculturalCalendarPage, meta: { module: 'calendar', title: 'Calendario agrícola' } },
       { path: 'cycles', name: 'cycles', component: RecordsPage, meta: { module: 'cycles', title: 'Ciclos productivos' } },
       { path: 'cycles/:id', name: 'cycle-detail', component: CycleDetailPage, meta: { module: 'cycles', title: 'Detalle del ciclo' } },
       { path: 'activities', name: 'activities', component: RecordsPage, meta: { module: 'activities', title: 'Labores e incidencias' } },
@@ -47,6 +51,8 @@ router.beforeEach((to) => {
   auth.restore()
   if (to.meta.requiresAuth && !auth.isAuthenticated) return { name: 'login' }
   if (to.meta.guest && auth.isAuthenticated) return { name: 'dashboard' }
+  if (to.name === 'dashboard' && auth.currentUser?.role === 'Operario') return { name: 'operator-dashboard' }
+  if (to.name === 'operator-dashboard' && auth.currentUser?.role !== 'Operario') return { name: 'dashboard' }
   if (to.meta.module && !canAccess(auth.currentUser, to.meta.module)) return { name: 'dashboard' }
   if (to.name === 'lots') {
     const farmId = typeof to.params.farmId === 'string' ? to.params.farmId : ''

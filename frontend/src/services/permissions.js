@@ -5,16 +5,16 @@
 
 // Módulos visibles en navegación y rutas para cada rol
 const access = {
-  SuperAdmin: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications', 'users'],
-  Admin: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications', 'users'],
-  Operario: ['dashboard', 'farms', 'lots', 'cycles', 'activities', 'nurseries', 'harvests', 'notifications']
+  SuperAdmin: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'calendar', 'notifications', 'users'],
+  Admin: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'calendar', 'notifications'],
+  Operario: ['dashboard', 'farms', 'lots', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'calendar', 'notifications']
 }
 
 // Módulos en los que cada rol puede crear, editar o eliminar registros
 const writeAccess = {
   SuperAdmin: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'users'],
-  Admin: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'users'],
-  Operario: ['activities', 'nurseries', 'harvests']
+  Admin: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry'],
+  Operario: []
 }
 
 /**
@@ -35,7 +35,7 @@ export function canWrite(user, module) {
  * Permite gestionar notificaciones personales en la burbuja a todos los roles de la aplicación.
  */
 export function canManageNotificationActions(user) {
-  return Boolean(user && ['SuperAdmin', 'Admin', 'Operario'].includes(user.role))
+  return Boolean(user && ['SuperAdmin', 'Admin'].includes(user.role))
 }
 
 /**

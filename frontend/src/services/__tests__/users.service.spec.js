@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { API_BASE_URL, setAuthToken } from '@/services/api'
 import { getRecord, getRecords, initializeStorage } from '@/services/storage'
+import { useAuthStore } from '@/stores/auth'
 import {
   changeUserStatus,
   createUser,
@@ -129,7 +130,8 @@ describe('Servicio de Usuarios (users.service.js)', () => {
             nombre: 'Andrés Salazar',
             correo: 'andres@agrogestion.demo',
             rol: 'operario',
-            estado: true
+            estado: true,
+            predios_asignados: ['farm-1']
           }
         },
         201
@@ -141,7 +143,10 @@ describe('Servicio de Usuarios (users.service.js)', () => {
       email: 'Andres@agrogestion.demo',
       role: 'Operario',
       active: true,
-      farms: ['farm-1']
+      farms: ['farm-1'],
+      eppStatus: 'Entregado',
+      eppDeliveredAt: '2025-03-10',
+      trainingRecords: [{ title: 'Uso seguro de herramientas', date: '2025-03-11', provider: 'SENA' }]
     })
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
@@ -153,6 +158,7 @@ describe('Servicio de Usuarios (users.service.js)', () => {
       correo: 'andres@agrogestion.demo',
       rol: 'operario',
       estado: true,
+      predios_asignados: ['farm-1'],
       contrasena: 'Agro2026!'
     })
 
@@ -162,7 +168,10 @@ describe('Servicio de Usuarios (users.service.js)', () => {
       email: 'andres@agrogestion.demo',
       role: 'Operario',
       active: true,
-      farms: ['farm-1']
+      farms: ['farm-1'],
+      eppStatus: 'Entregado',
+      eppDeliveredAt: '2025-03-10',
+      trainingRecords: [{ title: 'Uso seguro de herramientas', date: '2025-03-11', provider: 'SENA' }]
     })
 
     expect(getRecord('users', '65f1a2b3c4d5e6f7a8b9c099')).toEqual(created)
@@ -181,7 +190,8 @@ describe('Servicio de Usuarios (users.service.js)', () => {
           nombre: 'José Pérez Editado',
           correo: 'operario@agrogestion.demo',
           rol: 'administrador',
-          estado: true
+          estado: true,
+          predios_asignados: ['farm-1', 'farm-2']
         }
       })
     )
@@ -191,7 +201,10 @@ describe('Servicio de Usuarios (users.service.js)', () => {
       email: 'operario@agrogestion.demo',
       role: 'Admin',
       active: true,
-      farms: ['farm-1', 'farm-2']
+      farms: ['farm-1', 'farm-2'],
+      eppStatus: 'Entregado',
+      eppDeliveredAt: '2025-03-10',
+      trainingRecords: [{ title: 'Primeros auxilios', date: '2025-03-11', provider: 'SENA' }]
     })
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
@@ -202,7 +215,8 @@ describe('Servicio de Usuarios (users.service.js)', () => {
       nombre: 'José Pérez Editado',
       correo: 'operario@agrogestion.demo',
       rol: 'administrador',
-      estado: true
+      estado: true,
+      predios_asignados: ['farm-1', 'farm-2']
     })
 
     expect(updated).toEqual({
@@ -211,7 +225,10 @@ describe('Servicio de Usuarios (users.service.js)', () => {
       email: 'operario@agrogestion.demo',
       role: 'Admin',
       active: true,
-      farms: ['farm-1', 'farm-2']
+      farms: ['farm-1', 'farm-2'],
+      eppStatus: 'Entregado',
+      eppDeliveredAt: '2025-03-10',
+      trainingRecords: [{ title: 'Primeros auxilios', date: '2025-03-11', provider: 'SENA' }]
     })
     expect(getRecord('users', 'user-operator')?.role).toBe('Admin')
   })
@@ -247,9 +264,10 @@ describe('Servicio de Usuarios (users.service.js)', () => {
     expect(getRecord('users', 'user-operator')?.active).toBe(false)
   })
 
-  // Integración mock/users.js -> users.service.js: lectura síncrona inicial y refresco en segundo plano
-  it('getResponsibleUsers retorna usuarios activos en formato { label, value } y sincroniza con el backend si hay token', async () => {
-    setAuthToken('jwt-admin-token', true)
+  // Integración mock/users.js -> users.service.js: solo SuperAdmin sincroniza el directorio remoto
+  it('getResponsibleUsers retorna usuarios activos y sincroniza con el backend para SuperAdmin', async () => {
+    setAuthToken('jwt-superadmin-token', true)
+    useAuthStore().currentUser = { role: 'SuperAdmin' }
 
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       mockJsonResponse({
@@ -260,7 +278,7 @@ describe('Servicio de Usuarios (users.service.js)', () => {
               _id: '65f1a2b3c4d5e6f7a8b9c001',
               nombre: 'Laura Mendoza',
               correo: 'admin@agrogestion.demo',
-              rol: 'administrador',
+              rol: 'superadmin',
               estado: true
             },
             {
@@ -286,5 +304,16 @@ describe('Servicio de Usuarios (users.service.js)', () => {
         { label: 'Laura Mendoza', value: '65f1a2b3c4d5e6f7a8b9c001' }
       ])
     })
+  })
+
+  it('getResponsibleUsers no consulta el directorio remoto para Admin', () => {
+    setAuthToken('jwt-admin-token', true)
+    useAuthStore().currentUser = { role: 'Admin' }
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    const responsible = getResponsibleUsers()
+
+    expect(responsible.length).toBeGreaterThan(0)
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 })

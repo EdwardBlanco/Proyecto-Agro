@@ -1,7 +1,6 @@
 /**
  * Proveedor de opciones de usuarios responsables para selectores de formularios (RecordsPage.vue).
- * Lee de storage.js y dispara una sincronización silenciosa con GET /usuarios cuando hay sesión
- * activa de administrador para mantener los responsables actualizados respecto al backend.
+ * Lee de storage.js y sincroniza GET /usuarios en segundo plano solo para SuperAdmin.
  */
 import { getActivePinia } from 'pinia'
 import { getAuthToken } from '@/services/api'
@@ -22,23 +21,14 @@ export function resetResponsibleUsersSync() {
 
 /**
  * Retorna la lista de usuarios activos en formato { label, value } para componentes q-select,
- * iniciando en segundo plano la sincronización con el backend si corresponde al token actual.
+ * iniciando la sincronización con el backend únicamente para SuperAdmin.
  */
 export function getResponsibleUsers(role = null, valueField = 'id') {
   const token = getAuthToken()
-  let canSyncRemote = Boolean(token)
-
-  if (canSyncRemote && getActivePinia()) {
-    try {
-      const auth = useAuthStore()
-      // Solo SuperAdmin y Admin tienen permiso para listar todos los usuarios en el backend
-      if (auth.currentUser && !['SuperAdmin', 'Admin'].includes(auth.currentUser.role)) {
-        canSyncRemote = false
-      }
-    } catch {
-      // Ignorar si no hay store disponible
-    }
-  }
+  const activePinia = getActivePinia()
+  const canSyncRemote = Boolean(
+    token && activePinia && useAuthStore(activePinia).currentUser?.role === 'SuperAdmin'
+  )
 
   if (canSyncRemote && token !== lastSyncedToken && !syncPromise) {
     syncPromise = fetchUsers()

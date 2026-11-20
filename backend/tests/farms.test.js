@@ -96,6 +96,27 @@ describe('Fase 3 — Módulo de Predios (GP-02)', () => {
       expect(res.body.data).toHaveProperty('created_at');
     });
 
+    it('debe conservar el responsable sin inventar coordenadas cuando no fueron registradas', async () => {
+      const res = await request(app)
+        .post('/api/v1/predios')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          ...validFarm,
+          latitud: undefined,
+          longitud: undefined,
+          responsable: 'user-responsable'
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.responsable).toBe('user-responsable');
+      expect(res.body.data.latitud).toBeUndefined();
+      expect(res.body.data.longitud).toBeUndefined();
+      const savedFarm = await Farm.findById(res.body.data._id);
+      expect(savedFarm.responsable).toBe('user-responsable');
+      expect(savedFarm.latitud).toBeUndefined();
+      expect(savedFarm.longitud).toBeUndefined();
+    });
+
     it('debe rechazar con 400 si la latitud está fuera del rango [-90, 90]', async () => {
       const belowRangeRes = await request(app)
         .post('/api/v1/predios')

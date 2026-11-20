@@ -36,12 +36,15 @@ Son cuentas y credenciales ficticias para demostración; no se deben usar en pro
 ## Funcionalidades disponibles
 
 - Interfaz con paleta `#123D29`, `#185B2B`, `#2E7D32`, `#66BB6A`, tipografía Source Sans 3 y el nuevo logo institucional transparente.
-- Inicio y cierre de sesión, rutas protegidas y permisos diferenciados: Superadministrador gestiona el sistema, usuarios y permisos; Administrador gestiona sus predios y cuentas locales asignadas, sin poder asignar Superadministrador; Operario registra y consulta información asignada.
+- Inicio y cierre de sesión, rutas protegidas y permisos diferenciados: Superadministrador gestiona usuarios y permisos; Administrador conserva la gestión agrícola de sus predios sin acceso al directorio de usuarios; Operario consulta su jornada, calendario, telemetría y registros autorizados.
 - Login con acceso institucional simplificado: se conserva la imagen de fondo y el logo, y se muestra el encabezado «Plataforma para la gestión de predios, cultivos y actividades del SENA.»; se retiraron los textos promocionales anteriores.
-- Administración local de usuarios para Administrador: nombre, correo único, rol, predio asignado, estado EPP, estado de cuenta y contraseña con opción de mostrar/ocultar. El estado EPP usa `Entregado` y `Pendiente`; no existían opciones previas en los datos.
+- El formulario de usuarios del Superadministrador permite asignar predios y registrar, para operarios, estado y fecha de EPP y capacitaciones. Las asignaciones se sincronizan con la API; EPP y capacitaciones permanecen como metadatos locales.
 - Resumen con actividad, ciclos, lotes, cosechas, lecturas y notificaciones disponibles.
 - Componentes compartidos para estados (`StatusBadge`), indicadores (`KpiCard`), progreso (`ProgressBar`) y estados vacíos (`EmptyState`).
 - Administración de predios y lotes vinculados, con validación de formularios, selección de responsables y confirmación de eliminación.
+- Formularios agrupados por secciones y campos condicionales, con validación de fechas, relaciones, rangos, URL de evidencia y registros repetibles de aplicaciones y capacitaciones.
+- Calendario agrícola mensual y agenda que reúnen ciclos, labores e incidencias según sus fechas registradas; la fecha estimada de finalización de un ciclo no se interpreta como una duración confirmada.
+- Vista de operario con actividades asignadas para hoy y acceso de solo lectura al calendario y a la telemetría simulada existente.
 - Tarjetas compactas de predios y lotes con ilustraciones locales; las cards de cultivos e insumos conservan sus emojis y muestran únicamente los datos disponibles.
 - Consulta y administración de cultivos, insumos, ciclos productivos, labores, semilleros y cosechas; los lotes se gestionan desde su predio.
 - Cultivos: la tarjeta identifica la categoría y el tipo solo cuando están guardados; el desplegable muestra variedad, etapas e insumos asociados.
@@ -55,9 +58,9 @@ Son cuentas y credenciales ficticias para demostración; no se deben usar en pro
 - Cosechas con indicadores, producción convertida a kilogramos para unidades compatibles, rendimiento solo cuando el área está disponible y gráficos de producción/calidad.
 - Semilleros con datos de siembra y germinación; los porcentajes se muestran solo si están guardados o se pueden calcular con los registros existentes.
 - Cuando falta un dato se muestra «Sin datos registrados»; no se agregan valores técnicos, estados ni métricas que el sistema no pueda obtener.
-- Persistencia de demostración mediante `localStorage`.
+- Los registros de ciclos, labores, incidencias, semilleros, cosechas y los nuevos campos de trazabilidad se guardan en `localStorage`; no se migran a nuevas tablas ni se sincronizan con la API.
 
-Los lotes se consultan y administran desde su predio; no hay una vista global de lotes. La recuperación de contraseña fue eliminada. El clima no consulta servicios externos desde el frontend. Los permisos del cliente solo controlan la interfaz y no sustituyen autorización del lado del servidor.
+Los lotes se consultan y administran desde su predio; no hay una vista global de lotes. La recuperación de contraseña fue eliminada. El clima no consulta servicios externos desde el frontend. Los permisos del cliente no sustituyen la autorización del lado del servidor.
 
 ## Estructura del frontend
 
@@ -77,6 +80,6 @@ Los lotes se consultan y administran desde su predio; no hay una vista global de
 
 ## Persistencia y límites
 
-Los registros, usuarios locales, datos de imágenes previas y sesión se conservan en el almacenamiento local del navegador. Se pueden perder al limpiar los datos del sitio y no se sincronizan entre dispositivos. Las contraseñas de usuarios locales se guardan sin cifrado: no usar cuentas reales. Las lecturas de telemetría y avisos precargados son datos de demostración. El backend debe integrar Open-Meteo y exponer los datos esperados por `src/services/weather.js`; el frontend no contacta Open-Meteo. La recuperación de contraseña, los sensores reales, la sincronización y la autorización confiable requieren servicios externos.
+Los registros agrícolas descritos arriba y los metadatos locales de EPP/capacitación se conservan en el almacenamiento local del navegador; se pueden perder al limpiar los datos del sitio y no se sincronizan entre dispositivos. Predios y usuarios usan servicios del backend; las asignaciones de predios se guardan en la API. Las lecturas de telemetría y avisos precargados son datos de demostración. El backend debe integrar Open-Meteo y exponer los datos esperados por `src/services/weather.js`; el frontend no contacta Open-Meteo.
 
-El alcance del frontend es demostrativo: las cuentas creadas por Administrador y los cambios de notificaciones se guardan localmente; la telemetría es simulada y no hay sincronización entre dispositivos. El catálogo actual de cultivos no contiene nombre científico, tiempo de desarrollo, temperatura, requerimientos de agua/suelo ni recomendaciones; los usuarios tampoco guardan último acceso y los registros de insumos no incluyen stock mínimo, vencimiento o ubicación de almacenamiento. Este repositorio de frontend no incluye el backend ni su documentación; el backend se ejecuta y configura por separado.
+El alcance conserva datos de demostración: la telemetría es simulada y los registros locales no se sincronizan entre dispositivos. No se desarrollaron módulos de Finanzas ni Reportes. El catálogo actual de cultivos no contiene nombre científico, tiempo de desarrollo, temperatura, requerimientos de agua/suelo ni recomendaciones; los usuarios tampoco guardan último acceso y los registros de insumos no incluyen stock mínimo, vencimiento o ubicación de almacenamiento. El backend se ejecuta y configura por separado.

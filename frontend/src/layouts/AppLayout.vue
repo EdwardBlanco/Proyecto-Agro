@@ -28,13 +28,16 @@ const isCompactViewport = ref(window.innerWidth < 1024)
 const notificationPopover = ref(false)
 const weatherData = ref(null)
 const weatherState = ref('loading')
+const isOperator = computed(() => auth.currentUser?.role === 'Operario')
 
 // Catálogo de rutas del menú lateral agrupadas por área funcional
 const links = [
-  { title: 'Resumen', icon: 'space_dashboard', name: 'dashboard', module: 'dashboard', group: 'GENERAL' },
+  { title: 'Resumen', icon: 'space_dashboard', name: 'dashboard', module: 'dashboard', group: 'GENERAL', hideForOperator: true },
+  { title: 'Mi jornada', icon: 'today', name: 'operator-dashboard', module: 'dashboard', group: 'GENERAL', operatorOnly: true },
   { title: 'Predios y lotes', icon: 'landscape', name: 'farms', module: 'farms', group: 'GESTIÓN AGRÍCOLA' },
   { title: 'Cultivos', icon: 'eco', name: 'crops', module: 'crops', group: 'GESTIÓN AGRÍCOLA' },
   { title: 'Insumos', icon: 'inventory_2', name: 'inputs', module: 'inputs', group: 'GESTIÓN AGRÍCOLA' },
+  { title: 'Calendario agrícola', icon: 'calendar_month', name: 'calendar', module: 'calendar', group: 'PRODUCCIÓN' },
   { title: 'Ciclos productivos', icon: 'autorenew', name: 'cycles', module: 'cycles', group: 'PRODUCCIÓN' },
   { title: 'Labores e incidencias', icon: 'event_note', name: 'activities', module: 'activities', group: 'PRODUCCIÓN' },
   { title: 'Semilleros', icon: 'spa', name: 'nurseries', module: 'nurseries', group: 'PRODUCCIÓN' },
@@ -42,7 +45,11 @@ const links = [
   { title: 'Telemetría', icon: 'sensors', name: 'telemetry', module: 'telemetry', group: 'MONITOREO' },
   { title: 'Usuarios y permisos', icon: 'groups', name: 'users', module: 'users', group: 'ADMINISTRACIÓN' }
 ]
-const visibleLinks = computed(() => links.filter((link) => canAccess(auth.currentUser, link.module)))
+const visibleLinks = computed(() => links.filter((link) =>
+  canAccess(auth.currentUser, link.module) &&
+  (!link.operatorOnly || isOperator.value) &&
+  (!link.hideForOperator || !isOperator.value)
+))
 const groupedLinks = computed(() => visibleLinks.value.reduce((groups, link) => {
   groups[link.group] ??= []
   groups[link.group].push(link)
@@ -171,11 +178,19 @@ function archiveNotification(notification) {
 
 function deleteNotification(notification) {
   if (!canManageNotificationActions(auth.currentUser)) return
-  try {
-    deleteLocalNotification(notification)
-  } catch (error) {
-    $q.notify({ type: 'negative', message: error.message })
-  }
+  $q.dialog({
+    title: 'Eliminar notificación',
+    message: `¿Quieres eliminar “${notification.title}”? Esta acción no se puede deshacer.`,
+    cancel: { label: 'Cancelar', flat: true },
+    ok: { label: 'Eliminar', color: 'negative' },
+    persistent: true
+  }).onOk(() => {
+    try {
+      deleteLocalNotification(notification)
+    } catch (error) {
+      $q.notify({ type: 'negative', message: error.message })
+    }
+  })
 }
 
 /**
@@ -256,7 +271,7 @@ async function openAllNotifications() {
                     <q-avatar size="38px" class="brand-green-tint brand-green-text"><q-icon :name="notification.title.toLowerCase().includes('humedad') ? 'water_drop' : 'notifications_active'" /></q-avatar>
                     <span class="notification-entry-copy"><strong>{{ notification.title }}</strong><span>{{ notification.message }}</span><small>{{ relativeTime(notification.date) }}</small></span>
                     <span v-if="isUnread(notification)" class="notification-unread-dot" aria-label="No leída"></span>
-                    <div class="notification-entry-actions">
+                    <div v-if="canManageNotificationActions(auth.currentUser)" class="notification-entry-actions">
                       <q-btn flat round dense icon="done" aria-label="Marcar como leída" :disable="!isUnread(notification)" @click="markNotificationRead(notification)"><q-tooltip>Marcar como leída</q-tooltip></q-btn>
                       <q-btn flat round dense icon="archive" aria-label="Archivar" @click="archiveNotification(notification)"><q-tooltip>Archivar</q-tooltip></q-btn>
                       <q-btn flat round dense icon="delete_outline" color="negative" aria-label="Eliminar" @click="deleteNotification(notification)"><q-tooltip>Eliminar</q-tooltip></q-btn>
