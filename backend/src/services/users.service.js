@@ -1,3 +1,13 @@
+import {
+  changeMockUserPassword,
+  changeMockUserStatus,
+  createMockUser,
+  findMockUserById,
+  isMockDbMode,
+  listMockUsers,
+  serializeMockUser,
+  updateMockUser
+} from '../config/mockStore.js';
 import AppError from '../shared/errors/AppError.js';
 import { User } from '../models/User.model.js';
 
@@ -13,6 +23,10 @@ import { User } from '../models/User.model.js';
  * @returns {Promise<object>} Usuario creado en formato JSON
  */
 export const createUser = async ({ nombre, correo, contrasena, rol, estado, predios_asignados = [] }) => {
+  if (isMockDbMode()) {
+    return createMockUser({ nombre, correo, contrasena, rol, estado, predios_asignados });
+  }
+
   const normalizedEmail = correo.toLowerCase().trim();
 
   // Validar si el correo ya existe antes de crear el documento
@@ -47,6 +61,10 @@ export const createUser = async ({ nombre, correo, contrasena, rol, estado, pred
  * @returns {Promise<{usuarios: object[], total: number, page: number, limit: number, totalPages: number}>} Listado paginado
  */
 export const listUsers = async ({ rol, estado, q, page = 1, limit = 10 } = {}) => {
+  if (isMockDbMode()) {
+    return listMockUsers({ rol, estado, q, page, limit });
+  }
+
   const query = {};
 
   if (rol) {
@@ -87,6 +105,14 @@ export const listUsers = async ({ rol, estado, q, page = 1, limit = 10 } = {}) =
  * @returns {Promise<object>} Usuario encontrado en formato JSON
  */
 export const getUserById = async (id) => {
+  if (isMockDbMode()) {
+    const mockUser = findMockUserById(id);
+    if (!mockUser) {
+      throw new AppError('Usuario no encontrado', 404);
+    }
+    return serializeMockUser(mockUser);
+  }
+
   const user = await User.findById(id);
   if (!user) {
     throw new AppError('Usuario no encontrado', 404);
@@ -102,6 +128,10 @@ export const getUserById = async (id) => {
  * @returns {Promise<object>} Usuario actualizado en formato JSON
  */
 export const updateUser = async (id, data) => {
+  if (isMockDbMode()) {
+    return updateMockUser(id, data);
+  }
+
   const user = await User.findById(id);
   if (!user) {
     throw new AppError('Usuario no encontrado', 404);
@@ -151,6 +181,10 @@ export const updateUser = async (id, data) => {
  * @returns {Promise<object>} Usuario con estado actualizado en formato JSON
  */
 export const changeUserStatus = async (id, estado) => {
+  if (isMockDbMode()) {
+    return changeMockUserStatus(id, estado);
+  }
+
   const user = await User.findById(id);
   if (!user) {
     throw new AppError('Usuario no encontrado', 404);
@@ -171,6 +205,10 @@ export const changeUserStatus = async (id, estado) => {
  * @returns {Promise<{message: string}>} Mensaje de confirmación
  */
 export const changePassword = async (userId, currentPassword, newPassword) => {
+  if (isMockDbMode()) {
+    return changeMockUserPassword(userId, currentPassword, newPassword);
+  }
+
   // Se incluye contrasena_hash para comparar la contraseña actual mediante el método del modelo
   const user = await User.findById(userId).select('+contrasena_hash');
   if (!user) {

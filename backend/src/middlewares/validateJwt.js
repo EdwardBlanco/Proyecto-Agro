@@ -1,5 +1,11 @@
 import jwt from 'jsonwebtoken';
 import config from '../config/env.js';
+import {
+  findMockUserByEmail,
+  findMockUserById,
+  isMockDbMode,
+  serializeMockUser
+} from '../config/mockStore.js';
 import { User } from '../models/User.model.js';
 
 /**
@@ -65,7 +71,14 @@ export const validateJwt = async (req, res, next) => {
     const decoded = jwt.verify(token, config.jwtSecret);
     const uid = decoded.uid || decoded.id || decoded.usuario_id || decoded.sub;
 
-    const user = await User.findById(uid);
+    let user = null;
+    if (isMockDbMode()) {
+      const mockUser = findMockUserById(uid) || findMockUserByEmail(decoded.correo);
+      user = mockUser ? serializeMockUser(mockUser) : null;
+    } else {
+      user = await User.findById(uid);
+    }
+
     if (!user) {
       return res.status(401).json({
         status: 'fail',

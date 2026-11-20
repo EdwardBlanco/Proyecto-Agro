@@ -1,3 +1,4 @@
+import { getMockUsersStats, isMockDbMode } from '../config/mockStore.js';
 import { User } from '../models/User.model.js';
 
 /**
@@ -12,6 +13,21 @@ export const getDashboardSummary = async (authenticatedUser) => {
 
   // Si el usuario es administrador o superadmin, tiene acceso a métricas globales de gestión
   if (role === 'superadmin' || role === 'administrador') {
+    if (isMockDbMode()) {
+      return {
+        rol: role,
+        usuario: {
+          id: authenticatedUser._id,
+          nombre: authenticatedUser.nombre,
+          correo: authenticatedUser.correo
+        },
+        indicadores: {
+          usuarios: getMockUsersStats()
+        },
+        timestamp
+      };
+    }
+
     const [
       totalUsers,
       activeUsers,
