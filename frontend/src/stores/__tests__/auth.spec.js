@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { SESSION_KEY, useAuthStore } from '@/stores/auth'
 import { getAuthToken, TOKEN_KEY } from '@/services/api'
-import { initializeStorage } from '@/services/storage'
+import { getRecord, initializeStorage, saveRecord } from '@/services/storage'
 
 // Helper para simular respuestas JSON compatibles con api.js
 function mockJsonResponse(body, status = 200) {
@@ -104,6 +104,56 @@ describe('Auth Store (useAuthStore)', () => {
     )
     expect(auth.isAuthenticated).toBe(false)
     expect(getAuthToken()).toBeNull()
+  })
+
+  it('autentica cuentas locales y conserva sus credenciales al restaurar la sesión', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    saveRecord('users', {
+      id: 'user-local',
+      name: 'Usuario local',
+      email: 'local@agrogestion.demo',
+      password: 'Local123!',
+      role: 'Operario',
+      farms: ['farm-1'],
+      eppStatus: 'Pendiente',
+      active: true
+    })
+
+    const auth = useAuthStore()
+    const user = await auth.login('local@agrogestion.demo', 'Local123!', true)
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(user).not.toHaveProperty('password')
+    expect(JSON.parse(localStorage.getItem(SESSION_KEY)).user).not.toHaveProperty('password')
+
+    setActivePinia(createPinia())
+    const restoredAuth = useAuthStore()
+    await restoredAuth.restore()
+    expect(restoredAuth.currentUser?.id).toBe('user-local')
+    expect(getRecord('users', 'user-local')).toMatchObject({
+      password: 'Local123!',
+      eppStatus: 'Pendiente'
+    })
+  })
+
+  it('rechaza credenciales locales incorrectas y cuentas locales inactivas', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    saveRecord('users', {
+      id: 'user-local',
+      name: 'Usuario local',
+      email: 'local@agrogestion.demo',
+      password: 'Local123!',
+      role: 'Operario',
+      farms: ['farm-1'],
+      active: true
+    })
+
+    const auth = useAuthStore()
+    await expect(auth.login('local@agrogestion.demo', 'Wrong123!', true))
+      .rejects.toThrow('Correo o contraseña incorrectos.')
+    saveRecord('users', { ...getRecord('users', 'user-local'), active: false })
+    await expect(auth.login('local@agrogestion.demo', 'Local123!', true))
+      .rejects.toThrow('La cuenta está inactiva. Contacta al administrador.')
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   // Flujo restore(): hidratación inmediata desde localStorage + verificación remota con Bearer token en GET /auth/me

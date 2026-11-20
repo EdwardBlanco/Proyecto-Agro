@@ -113,12 +113,22 @@ export function mapBackendUserToFrontend(backendUser, { syncStorage = true } = {
   }
 
   const mappedUser = {
+    ...existingUser,
     id,
     name: name || existingUser?.name || '',
     email: email || existingUser?.email || '',
     role,
     active,
-    farms
+    farms,
+    ...(backendUser.eppStatus !== undefined || existingUser?.eppStatus !== undefined
+      ? { eppStatus: backendUser.eppStatus ?? existingUser?.eppStatus }
+      : {}),
+    ...(backendUser.eppDeliveredAt !== undefined || existingUser?.eppDeliveredAt !== undefined
+      ? { eppDeliveredAt: backendUser.eppDeliveredAt ?? existingUser?.eppDeliveredAt }
+      : {}),
+    ...(backendUser.trainingRecords !== undefined || existingUser?.trainingRecords !== undefined
+      ? { trainingRecords: backendUser.trainingRecords ?? existingUser?.trainingRecords }
+      : {})
   }
 
   if (syncStorage && mappedUser.id) {
@@ -161,6 +171,9 @@ export function mapFrontendUserToBackend(frontendUser = {}, { isCreate = false }
         : typeof frontendUser.estado === 'boolean'
           ? frontendUser.estado
           : true
+  }
+  if (Array.isArray(frontendUser.farms)) {
+    payload.predios_asignados = Array.from(new Set(frontendUser.farms.map((farmId) => String(farmId).trim()).filter(Boolean)))
   }
 
   const password = String(frontendUser.password ?? frontendUser.contrasena ?? '').trim()
@@ -243,18 +256,18 @@ export function mapFrontendFarmToBackend(frontendFarm = {}) {
     location = [municipality, department].filter(Boolean).join(', ')
   }
 
-  // Coordenadas por defecto (Oriente Antioqueño) cuando el formulario no incluye geolocalización
   const rawLat = frontendFarm.latitud ?? frontendFarm.latitude
-  const parsedLat =
-    rawLat !== undefined && rawLat !== null && rawLat !== '' ? Number(rawLat) : NaN
-  const latitude =
-    Number.isFinite(parsedLat) && parsedLat >= -90 && parsedLat <= 90 ? parsedLat : 6.1552
-
   const rawLng = frontendFarm.longitud ?? frontendFarm.longitude
-  const parsedLng =
-    rawLng !== undefined && rawLng !== null && rawLng !== '' ? Number(rawLng) : NaN
-  const longitude =
-    Number.isFinite(parsedLng) && parsedLng >= -180 && parsedLng <= 180 ? parsedLng : -75.3737
+  const coordinate = (label, rawValue, min, max) => {
+    if (rawValue === undefined || rawValue === null || rawValue === '') return undefined
+    const number = Number(rawValue)
+    if (!Number.isFinite(number) || number < min || number > max) {
+      throw new Error(`${label} debe estar en el rango ${min} a ${max}.`)
+    }
+    return number
+  }
+  const latitude = coordinate('La latitud', rawLat, -90, 90)
+  const longitude = coordinate('La longitud', rawLng, -180, 180)
 
   // Conversión de hectáreas (frontend) a metros cuadrados (backend)
   let areaM2 = 0
@@ -279,14 +292,18 @@ export function mapFrontendFarmToBackend(frontendFarm = {}) {
         ? frontendFarm.estado
         : true
 
-  return {
+  const payload = {
     nombre: name,
     ubicacion: location,
-    latitud: latitude,
-    longitud: longitude,
     area_m2: areaM2,
     estado: active
   }
+  if (latitude !== undefined) payload.latitud = latitude
+  if (longitude !== undefined) payload.longitud = longitude
+  if (frontendFarm.owner !== undefined && frontendFarm.owner !== null && frontendFarm.owner !== '') {
+    payload.responsable = String(frontendFarm.owner)
+  }
+  return payload
 }
 
 /**
@@ -336,7 +353,7 @@ export function mapBackendFarmToFrontend(backendFarm, { syncStorage = true } = {
     String(backendFarm.department ?? '').trim() ||
     parsedDepartment ||
     existingFarm?.department ||
-    'Antioquia'
+    ''
 
   let area = 0
   if (
@@ -357,15 +374,7 @@ export function mapBackendFarmToFrontend(backendFarm, { syncStorage = true } = {
     area = Number(existingFarm.area)
   }
 
-  let defaultOwner = 'user-admin'
-  try {
-    const users = getRecords('users')
-    const firstActive = users.find((u) => u.active !== false) || users[0]
-    if (firstActive?.id) defaultOwner = firstActive.id
-  } catch {
-    defaultOwner = 'user-admin'
-  }
-  const owner = String(backendFarm.owner || existingFarm?.owner || defaultOwner)
+  const owner = backendFarm.responsable ?? backendFarm.owner ?? existingFarm?.owner
 
   let status = 'Activo'
   if (backendFarm.estado === false) {
@@ -387,14 +396,26 @@ export function mapBackendFarmToFrontend(backendFarm, { syncStorage = true } = {
 
   const image = backendFarm.image !== undefined ? backendFarm.image : existingFarm?.image
 
+  const localFields = ['landUse', 'waterSources', 'environmentNotes', 'documentReferences']
+  const localMetadata = Object.fromEntries(localFields
+    .filter((key) => backendFarm[key] !== undefined || existingFarm?.[key] !== undefined)
+    .map((key) => [key, backendFarm[key] ?? existingFarm?.[key]]))
   const mappedFarm = {
+    ...existingFarm,
+    ...localMetadata,
     id,
     name: name || existingFarm?.name || '',
     municipality,
     department,
     area,
-    owner,
     status,
+    ...(owner !== undefined && owner !== null && owner !== '' ? { owner: String(owner) } : {}),
+    ...(backendFarm.latitud !== undefined || backendFarm.latitude !== undefined
+      ? { latitude: Number(backendFarm.latitud ?? backendFarm.latitude) }
+      : existingFarm?.latitude !== undefined ? { latitude: existingFarm.latitude } : {}),
+    ...(backendFarm.longitud !== undefined || backendFarm.longitude !== undefined
+      ? { longitude: Number(backendFarm.longitud ?? backendFarm.longitude) }
+      : existingFarm?.longitude !== undefined ? { longitude: existingFarm.longitude } : {}),
     ...(image !== undefined ? { image } : {})
   }
 

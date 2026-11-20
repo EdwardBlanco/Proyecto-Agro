@@ -13,12 +13,13 @@ import { Farm } from '../models/Farm.model.js';
  * @param {boolean} [farmData.estado=true] - Estado lógico inicial del predio
  * @returns {Promise<object>} Predio creado serializado a JSON
  */
-export const createFarm = async ({ nombre, ubicacion, latitud, longitud, area_m2, estado }) => {
+export const createFarm = async ({ nombre, ubicacion, latitud, longitud, area_m2, estado, responsable }) => {
   const farm = new Farm({
     nombre: nombre.trim(),
     ubicacion: ubicacion.trim(),
     latitud,
     longitud,
+    responsable,
     area_m2,
     estado: estado !== undefined ? estado : true
   });
@@ -114,6 +115,10 @@ export const updateFarm = async (id, data) => {
 
   if (data.longitud !== undefined) {
     farm.longitud = data.longitud;
+  }
+
+  if (data.responsable !== undefined) {
+    farm.responsable = data.responsable;
   }
 
   if (data.area_m2 !== undefined) {

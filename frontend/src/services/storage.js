@@ -22,9 +22,9 @@ const demoData = {
     { id: 'farm-2', name: 'La Esperanza', municipality: 'La Ceja', department: 'Antioquia', area: 18, owner: 'user-admin', status: 'Activo' }
   ],
   lots: [
-    { id: 'lot-1', name: 'Lote Norte', farmId: 'farm-1', area: 8, soilType: 'Franco', status: 'Activo' },
-    { id: 'lot-2', name: 'Lote La Honda', farmId: 'farm-1', area: 6, soilType: 'Franco arcilloso', status: 'Activo' },
-    { id: 'lot-3', name: 'Lote 3', farmId: 'farm-2', area: 7, soilType: 'Franco arenoso', status: 'Activo' }
+    { id: 'lot-1', name: 'Lote Norte', farmId: 'farm-1', area: 8, soilType: 'Franco', responsible: 'user-agronomist', status: 'Activo' },
+    { id: 'lot-2', name: 'Lote La Honda', farmId: 'farm-1', area: 6, soilType: 'Franco arcilloso', responsible: 'user-operator', status: 'Activo' },
+    { id: 'lot-3', name: 'Lote 3', farmId: 'farm-2', area: 7, soilType: 'Franco arenoso', responsible: 'user-admin', status: 'Activo' }
   ],
   crops: [
     { id: 'crop-1', name: 'Aguacate Hass', variety: 'Hass', category: 'Frutal', stages: 'Floración, Cuajado, Desarrollo, Cosecha', inputs: ['input-1', 'input-2'] },
@@ -32,9 +32,9 @@ const demoData = {
     { id: 'crop-3', name: 'Café', variety: 'Castillo', category: 'Permanente', stages: 'Crecimiento, Floración, Maduración', inputs: ['input-1'] }
   ],
   inputs: [
-    { id: 'input-1', name: 'Compost orgánico', category: 'Fertilizante', unit: 'kg', stock: 120, crops: 'Aguacate Hass, Tomate, Café' },
-    { id: 'input-2', name: 'Cal agrícola', category: 'Correctivo', unit: 'kg', stock: 80, crops: 'Aguacate Hass' },
-    { id: 'input-3', name: 'NPK 15-15-15', category: 'Fertilizante', unit: 'kg', stock: 45, crops: 'Tomate' }
+    { id: 'input-1', name: 'Compost orgánico', category: 'Fertilizante', unit: 'kg', stock: 120, crops: ['crop-1', 'crop-2', 'crop-3'] },
+    { id: 'input-2', name: 'Cal agrícola', category: 'Correctivo', unit: 'kg', stock: 80, crops: ['crop-1'] },
+    { id: 'input-3', name: 'NPK 15-15-15', category: 'Fertilizante', unit: 'kg', stock: 45, crops: ['crop-2'] }
   ],
   cycles: [
     { id: 'cycle-1', name: 'Aguacate · Ciclo 2026', farmId: 'farm-1', lotId: 'lot-1', cropId: 'crop-1', startDate: '2026-02-01', area: 5, target: 12000, status: 'En curso' },
@@ -89,6 +89,15 @@ function readData() {
     parsed.lots = parsed.lots.map((lot) => ({
       ...lot,
       status: lot.status === 'En descanso' ? 'En preparación' : allowedStatuses.includes(lot.status) ? lot.status : 'Inactivo'
+    }))
+    parsed.inputs = parsed.inputs.map((input) => ({
+      ...input,
+      crops: Array.isArray(input.crops)
+        ? input.crops
+        : String(input.crops ?? '')
+          .split(',')
+          .map((name) => parsed.crops.find((crop) => crop.name === name.trim())?.id)
+          .filter(Boolean)
     }))
     return parsed
   } catch (error) {
@@ -168,7 +177,7 @@ export function removeRecord(entity, id) {
   const blockers = {
     farms: [['lots', 'farmId'], ['cycles', 'farmId'], ['telemetry', 'farmId']],
     lots: [['cycles', 'lotId'], ['telemetry', 'lotId'], ['notifications', 'lotId']],
-    crops: [['cycles', 'cropId'], ['nurseries', 'cropId']],
+    crops: [['cycles', 'cropId'], ['nurseries', 'cropId'], ['inputs', 'crops']],
     cycles: [['activities', 'cycleId'], ['nurseries', 'cycleId'], ['harvests', 'cycleId']],
     inputs: [['crops', 'inputs']]
   }

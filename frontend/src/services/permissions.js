@@ -5,16 +5,16 @@
 
 // Módulos visibles en navegación y rutas para cada rol
 const access = {
-  SuperAdmin: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications', 'users'],
-  Admin: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications', 'users'],
-  Operario: ['dashboard', 'farms', 'lots', 'cycles', 'activities', 'nurseries', 'harvests', 'notifications']
+  SuperAdmin: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'calendar', 'notifications', 'users'],
+  Admin: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'calendar', 'notifications'],
+  Operario: ['dashboard', 'farms', 'lots', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'calendar', 'notifications']
 }
 
 // Módulos en los que cada rol puede crear, editar o eliminar registros
 const writeAccess = {
-  SuperAdmin: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications', 'users'],
-  Admin: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'users'],
-  Operario: ['activities', 'nurseries', 'harvests']
+  SuperAdmin: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'users'],
+  Admin: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry'],
+  Operario: []
 }
 
 /**
@@ -32,11 +32,16 @@ export function canWrite(user, module) {
 }
 
 /**
- * Retorna null cuando el rol tiene visibilidad global sobre todos los predios,
- * o el listado de IDs de predios asignados cuando el acceso está restringido (Operario).
+ * Permite gestionar notificaciones personales en la burbuja a todos los roles de la aplicación.
+ */
+export function canManageNotificationActions(user) {
+  return Boolean(user && ['SuperAdmin', 'Admin'].includes(user.role))
+}
+
+/**
+ * Retorna null para el SuperAdmin, que tiene visibilidad global, y los predios
+ * asignados para Admin y Operario.
  */
 export function visibleFarmIds(user) {
-  return user?.role === 'SuperAdmin' || user?.role === 'Admin'
-    ? null
-    : user?.farms ?? []
+  return user?.role === 'SuperAdmin' ? null : user?.farms ?? []
 }
