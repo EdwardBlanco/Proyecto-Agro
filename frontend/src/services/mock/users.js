@@ -24,7 +24,7 @@ export function resetResponsibleUsersSync() {
  * Retorna la lista de usuarios activos en formato { label, value } para componentes q-select,
  * iniciando en segundo plano la sincronización con el backend si corresponde al token actual.
  */
-export function getResponsibleUsers() {
+export function getResponsibleUsers(role = null, valueField = 'id') {
   const token = getAuthToken()
   let canSyncRemote = Boolean(token)
 
@@ -57,5 +57,6 @@ export function getResponsibleUsers() {
 
   return getRecords('users')
     .filter((user) => user.active)
-    .map((user) => ({ label: user.name, value: user.id }))
+    .filter((user) => !role || user.role === role)
+    .map((user) => ({ label: user.name, value: user[valueField] }))
 }

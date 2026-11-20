@@ -23,7 +23,7 @@ const routes = [
     children: [
       { path: '', name: 'dashboard', component: DashboardPage, meta: { module: 'dashboard', title: 'Resumen' } },
       { path: 'farms', name: 'farms', component: RecordsPage, meta: { module: 'farms', title: 'Predios y lotes' } },
-      { path: 'lots', name: 'lots', component: RecordsPage, meta: { module: 'lots', title: 'Lotes' } },
+      { path: 'farms/:farmId/lots', name: 'lots', component: RecordsPage, meta: { module: 'lots', title: 'Lotes' } },
       { path: 'crops', name: 'crops', component: RecordsPage, meta: { module: 'crops', title: 'Cultivos' } },
       { path: 'inputs', name: 'inputs', component: RecordsPage, meta: { module: 'inputs', title: 'Insumos' } },
       { path: 'cycles', name: 'cycles', component: RecordsPage, meta: { module: 'cycles', title: 'Ciclos productivos' } },
@@ -41,7 +41,7 @@ const routes = [
 
 const router = createRouter({ history: createWebHistory(), routes })
 
-// Guardia global: restaura sesión local, valida autenticación, permisos de módulo y acceso al predio en /lots
+// Guardia global: restaura sesión local, valida autenticación, permisos de módulo y acceso al predio.
 router.beforeEach((to) => {
   const auth = useAuthStore()
   auth.restore()
@@ -49,10 +49,9 @@ router.beforeEach((to) => {
   if (to.meta.guest && auth.isAuthenticated) return { name: 'dashboard' }
   if (to.meta.module && !canAccess(auth.currentUser, to.meta.module)) return { name: 'dashboard' }
   if (to.name === 'lots') {
-    const farmId = typeof to.query.farm === 'string' ? to.query.farm : ''
+    const farmId = typeof to.params.farmId === 'string' ? to.params.farmId : ''
     const farm = farmId ? getRecord('farms', farmId) : null
-    const isAssigned = auth.currentUser?.role === 'SuperAdmin' || auth.currentUser?.role === 'Admin' ||
-      auth.currentUser?.farms?.includes(farmId)
+    const isAssigned = auth.currentUser?.role === 'SuperAdmin' || auth.currentUser?.farms?.includes(farmId)
     if (!farm || !isAssigned) return { name: 'farms' }
   }
   return true

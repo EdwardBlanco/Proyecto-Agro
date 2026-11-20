@@ -9,6 +9,8 @@ import { getRecord, getRecords } from '@/services/storage'
 import { useAuthStore } from '@/stores/auth'
 import { canWrite } from '@/services/permissions'
 import { harvestKilograms } from '@/services/production'
+import BackButton from '@/components/BackButton.vue'
+import StatusBadge from '@/components/StatusBadge.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -26,6 +28,13 @@ const lot = computed(() => getRecord('lots', cycle.value?.lotId))
 const activities = computed(() => getRecords('activities').filter((item) => item.cycleId === cycle.value?.id))
 const harvests = computed(() => getRecords('harvests').filter((item) => item.cycleId === cycle.value?.id))
 const nurseries = computed(() => getRecords('nurseries').filter((item) => item.cycleId === cycle.value?.id))
+const laborCount = computed(() => activities.value.filter((item) => item.kind === 'Labor').length)
+const incidenceCount = computed(() => activities.value.filter((item) => item.kind === 'Incidencia').length)
+const pendingLaborCount = computed(() => activities.value.filter((item) => item.kind === 'Labor' && item.status === 'Pendiente').length)
+const hasInputLink = computed(() => Array.isArray(crop.value?.inputs))
+const cycleInputs = computed(() => hasInputLink.value
+  ? crop.value.inputs.map((id) => getRecord('inputs', id)).filter(Boolean)
+  : [])
 const canAddRecords = computed(() => canWrite(auth.currentUser, 'activities'))
 const total = computed(() => harvests.value.reduce((sum, item) => sum + harvestKilograms(item), 0))
 
@@ -36,15 +45,25 @@ function formatDate(value) {
   const date = new Date(`${value}T00:00:00`)
   return Number.isFinite(date.getTime())
     ? new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: 'long', year: 'numeric' }).format(date)
-    : value || '—'
+    : value || 'Sin datos registrados'
 }
 </script>
 
 <template>
   <q-page v-if="cycle" class="page-content cycle-detail-page">
-    <q-btn flat no-caps color="primary" icon="arrow_back" label="Volver a ciclos" class="back-link" :to="{ name: 'cycles' }" />
-    <div class="page-intro-row cycle-title-row"><div><div class="section-eyebrow">SEGUIMIENTO PRODUCTIVO</div><h1>{{ cycle.name }}</h1><p>{{ crop?.name }} · {{ farm?.name }} / {{ lot?.name }}</p></div><q-badge color="green-1" text-color="green-9" class="status-badge">{{ cycle.status }}</q-badge></div>
-    <div class="cycle-metric-grid"><q-card flat bordered><small>Área sembrada</small><strong>{{ Number(cycle.area).toLocaleString('es-CO', { maximumFractionDigits: 2 }) }} HA</strong></q-card><q-card flat bordered><small>Meta de producción</small><strong>{{ Number(cycle.target || 0).toLocaleString('es-CO') }} kg</strong></q-card><q-card flat bordered><small>Cosecha acumulada</small><strong>{{ total.toLocaleString('es-CO') }} kg</strong></q-card><q-card flat bordered><small>Fecha de inicio</small><strong>{{ formatDate(cycle.startDate) }}</strong></q-card></div>
+    <BackButton label="Volver a ciclos" :to="{ name: 'cycles' }" />
+    <div class="cycle-detail-status"><StatusBadge :status="cycle.status" /></div>
+    <div class="cycle-metric-grid"><q-card flat bordered><small>Área sembrada</small><strong>{{ cycle.area !== null && cycle.area !== undefined && cycle.area !== '' ? `${Number(cycle.area).toLocaleString('es-CO', { maximumFractionDigits: 2 })} HA` : 'Sin datos registrados' }}</strong><small>HA = Hectáreas</small></q-card><q-card flat bordered><small>Meta de producción</small><strong>{{ cycle.target !== null && cycle.target !== undefined && cycle.target !== '' ? `${Number(cycle.target).toLocaleString('es-CO')} kg` : 'Sin datos registrados' }}</strong></q-card><q-card flat bordered><small>Cosecha acumulada</small><strong>{{ total.toLocaleString('es-CO') }} kg</strong></q-card><q-card flat bordered><small>Fecha de inicio</small><strong>{{ formatDate(cycle.startDate) }}</strong></q-card></div>
+    <div class="cycle-related-summary">
+      <div><span>Labores asociadas</span><strong>{{ laborCount }}</strong><small>Registros de labor vinculados a este ciclo.</small></div>
+      <div><span>Incidencias asociadas</span><strong>{{ incidenceCount }}</strong><small>Registros de incidencia vinculados a este ciclo.</small></div>
+      <div v-if="hasInputLink"><span>Insumos del cultivo</span><strong>{{ cycleInputs.length }}</strong><small>{{ cycleInputs.map((item) => item.name).join(', ') || 'Sin datos registrados' }}</small></div>
+      <div><span>Cosechas asociadas</span><strong>{{ harvests.length }}</strong><small>Producción total registrada: {{ total.toLocaleString('es-CO') }} kg.</small></div>
+    </div>
+    <q-banner v-if="pendingLaborCount" class="cycle-pending-alert">
+      <template #avatar><q-icon name="schedule" /></template>
+      Hay {{ pendingLaborCount }} {{ pendingLaborCount === 1 ? 'labor pendiente' : 'labores pendientes' }} en este ciclo.
+    </q-banner>
     <div class="dashboard-columns cycle-panels">
       <q-card flat bordered class="panel-card">
         <q-card-section class="panel-heading">
@@ -54,9 +73,9 @@ function formatDate(value) {
         <q-separator />
         <q-list v-if="activities.length">
           <q-item v-for="item in activities" :key="item.id" class="activity-row">
-            <q-item-section avatar><q-avatar color="green-1" text-color="primary" :icon="item.kind === 'Labor' ? 'eco' : 'warning_amber'" /></q-item-section>
-            <q-item-section><q-item-label>{{ item.type }} · {{ item.kind }}</q-item-label><q-item-label caption>{{ item.description }} · {{ item.responsible }}</q-item-label></q-item-section>
-            <q-item-section side>{{ formatDate(item.date) }}</q-item-section>
+            <q-item-section avatar><q-avatar :class="item.kind === 'Incidencia' ? 'activity-incidence-avatar' : 'brand-green-tint brand-green-text'" :icon="item.kind === 'Labor' ? 'task_alt' : 'warning_amber'" /></q-item-section>
+            <q-item-section><q-item-label>{{ item.type }} · {{ item.kind }}</q-item-label><q-item-label caption>{{ item.description || 'Sin datos registrados' }} · {{ item.responsible || 'Sin datos registrados' }}</q-item-label></q-item-section>
+            <q-item-section side><div class="cycle-activity-side"><span>{{ formatDate(item.date) }}</span><StatusBadge v-if="item.status" :status="item.status" /></div></q-item-section>
           </q-item>
         </q-list>
         <div v-else class="small-empty">Este ciclo aún no tiene labores o incidencias.</div>

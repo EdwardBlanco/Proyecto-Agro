@@ -1,7 +1,6 @@
 <script setup>
 /**
- * Pantalla de inicio de sesión (/login) y vista informativa de recuperación de acceso.
- * Delega la autenticación real al store auth.js y redirige al dashboard al completarse.
+ * Pantalla de inicio de sesión (/login), con autenticación demo o cuentas locales.
  */
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -15,11 +14,10 @@ const email = ref('')
 const password = ref('')
 const remember = ref(true)
 const showPassword = ref(false)
-const recovering = ref(false)
 const busy = ref(false)
 
 /**
- * Valida los campos locales, invoca auth.login() contra el backend y redirige al panel principal.
+ * Valida las credenciales locales o demo y redirige al panel principal.
  */
 async function submit() {
   if (!email.value.trim() || !password.value) {
@@ -42,14 +40,9 @@ async function submit() {
   <main class="login-page">
     <section class="login-panel">
       <div class="login-story">
-        <div class="brand brand-light">
+        <div class="brand">
           <img src="/Logo_SENAgro.png" alt="SENAgro" class="login-logo" />
         </div>
-        <div class="story-copy">
-          <h1>«Cultiva información.<br />Cosecha mejores decisiones.»</h1>
-          <p>Gestiona tus predios, cultivos y actividades en un solo lugar.</p>
-        </div>
-        <div class="login-story-foot"><q-icon name="verified_user" /> Plataforma de precisión agrícola</div>
       </div>
 
       <div class="login-form-side">
@@ -57,38 +50,28 @@ async function submit() {
           <div class="mobile-brand brand">
             <img src="/Logo_SENAgro.png" alt="SENAgro" class="login-logo" />
           </div>
-          <div class="form-eyebrow">ACCESO SEGURO</div>
-          <h2>{{ recovering ? 'Recuperar acceso' : 'Bienvenido de nuevo' }}</h2>
-          <p class="form-intro">
-            {{ recovering ? 'La recuperación real de contraseña requiere conexión con el backend.' : 'Ingresa tus credenciales para acceder a la gestión de tus predios y módulos de telemetría.' }}
-          </p>
+          <p class="login-institutional-heading">Plataforma para la gestión de predios, cultivos y actividades del SENA.</p>
+          <h2>Bienvenido de nuevo</h2>
 
-          <q-form v-if="!recovering" class="login-form" @submit.prevent="submit">
+          <q-form class="login-form" novalidate @submit.prevent="submit">
             <label for="email">Correo electrónico o usuario</label>
-            <q-input id="email" v-model="email" outlined dense placeholder="ejemplo@agrogestion.demo" autocomplete="username">
+            <q-input id="email" v-model="email" outlined dense maxlength="254" placeholder="Ingresa tu correo o usuario" autocomplete="username" :rules="[value => Boolean(value?.trim()) || 'Este campo es obligatorio']">
               <template #prepend><q-icon name="person_outline" /></template>
             </q-input>
             <label for="password">Contraseña</label>
-            <q-input id="password" v-model="password" outlined dense :type="showPassword ? 'text' : 'password'" autocomplete="current-password">
+            <q-input id="password" v-model="password" outlined dense maxlength="60" placeholder="Ingresa tu contraseña" :type="showPassword ? 'text' : 'password'" autocomplete="current-password" :rules="[value => Boolean(value) || 'Este campo es obligatorio']">
               <template #prepend><q-icon name="lock_outline" /></template>
-              <template #append><q-btn flat round dense type="button" class="password-toggle" :icon="showPassword ? 'visibility_off' : 'visibility'" :aria-label="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'" @click="showPassword = !showPassword" /></template>
+              <template #append><q-btn flat round dense no-ripple type="button" class="password-toggle" :icon="showPassword ? 'visibility_off' : 'visibility'" :aria-label="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'" @click="showPassword = !showPassword" /></template>
             </q-input>
             <div class="login-options">
               <q-checkbox v-model="remember" dense label="Recordarme" />
-              <button type="button" class="text-button" @click="recovering = true">¿Olvidaste tu contraseña?</button>
             </div>
             <q-btn type="submit" color="primary" unelevated no-caps class="full-width login-submit" :loading="busy" label="Iniciar sesión">
               <q-icon name="arrow_forward" class="q-ml-sm" />
             </q-btn>
           </q-form>
-          <q-form v-else class="login-form" @submit.prevent="$q.notify({ type: 'info', message: 'La recuperación se habilitará al integrar el backend.' })">
-            <label for="recovery-email">Correo registrado</label>
-            <q-input id="recovery-email" v-model="email" outlined dense type="email" placeholder="tu@correo.com" />
-            <q-btn type="submit" color="primary" unelevated no-caps class="full-width login-submit" label="Solicitar recuperación" />
-            <button type="button" class="text-button back-login" @click="recovering = false">Volver al inicio de sesión</button>
-          </q-form>
 
-          <div class="private-note"><q-icon name="shield" /><span><strong>Sistema privado institucional.</strong> Acceso restringido a personal autorizado. Esta versión usa cuentas ficticias para demostración.</span></div>
+          <div class="private-note"><q-icon name="shield" /><span><strong>Sistema privado institucional.</strong> Acceso restringido a personal autorizado.</span></div>
         </div>
       </div>
     </section>

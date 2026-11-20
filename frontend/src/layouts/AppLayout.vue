@@ -1,14 +1,22 @@
 <script setup>
 /**
- * Shell principal autenticado de la aplicación (barra lateral, cabecera, estado de red y notificaciones).
+ * Shell principal autenticado de la aplicación (barra lateral, cabecera y notificaciones).
  * Filtra los enlaces de navegación según permissions.js y sincroniza el centro de notificaciones con storage.js.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { useAuthStore } from '@/stores/auth'
-import { canAccess, canWrite } from '@/services/permissions'
-import { getRecords, saveRecord } from '@/services/storage'
+import { canAccess, canManageNotificationActions } from '@/services/permissions'
+import { getRecord, getRecords } from '@/services/storage'
+import {
+  archiveNotification as archiveLocalNotification,
+  deleteNotification as deleteLocalNotification,
+  isNotificationArchived,
+  isNotificationUnread,
+  markNotificationRead as markLocalNotificationRead
+} from '@/services/notifications'
+import { getCurrentWeather } from '@/services/weather'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -16,11 +24,10 @@ const route = useRoute()
 const $q = useQuasar()
 const sidebarCollapsed = ref(false)
 const mobileDrawerOpen = ref(false)
-const isOnline = ref(navigator.onLine)
 const isCompactViewport = ref(window.innerWidth < 1024)
 const notificationPopover = ref(false)
-const notificationTab = ref('all')
-const clearNotificationsDialog = ref(false)
+const weatherData = ref(null)
+const weatherState = ref('loading')
 
 // Catálogo de rutas del menú lateral agrupadas por área funcional
 const links = [
@@ -41,19 +48,14 @@ const groupedLinks = computed(() => visibleLinks.value.reduce((groups, link) => 
   groups[link.group].push(link)
   return groups
 }, {}))
-const pageTitle = computed(() => route.meta.title ?? 'SENAgro')
+const pageTitle = computed(() => route.name === 'cycle-detail'
+  ? getRecord('cycles', route.params.id)?.name ?? route.meta.title ?? 'Detalle del ciclo'
+  : route.meta.title ?? 'Resumen')
 
 // Cierra el cajón móvil automáticamente al navegar entre rutas
 watch(() => route.fullPath, () => {
   mobileDrawerOpen.value = false
 })
-
-/**
- * Actualiza el indicador visual de conectividad con el navegador.
- */
-function updateNetworkStatus() {
-  isOnline.value = navigator.onLine
-}
 
 /**
  * Detecta cambios de ancho de pantalla para alternar entre menú de escritorio y móvil.
@@ -62,15 +64,47 @@ function updateViewportStatus() {
   isCompactViewport.value = window.innerWidth < 1024
 }
 
+function loadWeather() {
+  if (!navigator.geolocation) {
+    weatherState.value = 'unavailable'
+    return
+  }
+  weatherState.value = 'loading'
+  try {
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      try {
+        weatherData.value = await getCurrentWeather({ lat: coords.latitude, lon: coords.longitude })
+        weatherState.value = weatherData.value ? 'ready' : 'no-data'
+      } catch (error) {
+        console.error('No fue posible cargar el clima.', error)
+        weatherState.value = 'no-data'
+      }
+    }, (error) => {
+      weatherState.value = error.code === 1 ? 'permission' : 'no-data'
+    }, { maximumAge: 300000, timeout: 10000 })
+  } catch (error) {
+    console.error('No fue posible solicitar la ubicación.', error)
+    weatherState.value = 'unavailable'
+  }
+}
+
+const weatherLabel = computed(() => weatherData.value?.temperature !== undefined && weatherData.value?.temperature !== null
+  ? `${weatherData.value.temperature}°C`
+  : weatherState.value === 'loading' ? 'Cargando' : '--°C')
+const weatherMessage = computed(() => ({
+  loading: 'Cargando el clima de tu zona.',
+  permission: 'La ubicación no está autorizada.',
+  unavailable: 'La ubicación no está disponible en este dispositivo.',
+  'no-data': 'No hay datos del clima disponibles.',
+  ready: 'Clima de tu zona.'
+})[weatherState.value])
+
 onMounted(() => {
-  window.addEventListener('online', updateNetworkStatus)
-  window.addEventListener('offline', updateNetworkStatus)
   window.addEventListener('resize', updateViewportStatus)
+  loadWeather()
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('online', updateNetworkStatus)
-  window.removeEventListener('offline', updateNetworkStatus)
   window.removeEventListener('resize', updateViewportStatus)
 })
 
@@ -79,20 +113,15 @@ const notifications = computed(() => {
   const farms = auth.currentUser?.farms ?? []
   return getRecords('notifications')
     .filter((item) => {
-      if (['SuperAdmin', 'Admin'].includes(auth.currentUser?.role)) return true
+      if (item.deletedAt || isNotificationArchived(item)) return false
+      if (auth.currentUser?.role === 'SuperAdmin') return true
       const farmId = getRecords('lots').find((lot) => lot.id === item.lotId)?.farmId
-      return !farmId || farms.includes(farmId)
+      return Boolean(farmId && farms.includes(farmId))
     })
     .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())
 })
-const activeNotifications = computed(() => notifications.value.filter((item) => !item.deletedAt))
-const isUnread = (notification) => !notification.deletedAt && !notification.readAt && notification.status === 'Pendiente'
-const unreadCount = computed(() => activeNotifications.value.filter(isUnread).length)
-const shownNotifications = computed(() => notificationTab.value === 'history'
-  ? notifications.value.filter((item) => item.deletedAt)
-  : notificationTab.value === 'unread'
-    ? activeNotifications.value.filter(isUnread)
-    : activeNotifications.value)
+const isUnread = isNotificationUnread
+const unreadCount = computed(() => notifications.value.filter(isUnread).length)
 
 /**
  * Cierra la sesión en el store y redirige a la pantalla de login.
@@ -123,9 +152,27 @@ function relativeTime(value) {
  * Marca una notificación individual como leída en almacenamiento local.
  */
 function markNotificationRead(notification) {
-  if (notification.readAt) return
+  if (!canManageNotificationActions(auth.currentUser) || !isUnread(notification)) return
   try {
-    saveRecord('notifications', { ...notification, readAt: new Date().toISOString() })
+    markLocalNotificationRead(notification)
+  } catch (error) {
+    $q.notify({ type: 'negative', message: error.message })
+  }
+}
+
+function archiveNotification(notification) {
+  if (!canManageNotificationActions(auth.currentUser)) return
+  try {
+    archiveLocalNotification(notification)
+  } catch (error) {
+    $q.notify({ type: 'negative', message: error.message })
+  }
+}
+
+function deleteNotification(notification) {
+  if (!canManageNotificationActions(auth.currentUser)) return
+  try {
+    deleteLocalNotification(notification)
   } catch (error) {
     $q.notify({ type: 'negative', message: error.message })
   }
@@ -137,22 +184,6 @@ function markNotificationRead(notification) {
 async function openAllNotifications() {
   notificationPopover.value = false
   await router.push({ name: 'notifications' })
-}
-
-/**
- * Envía todas las notificaciones activas al historial marcándolas con deletedAt.
- */
-function clearAllNotifications() {
-  try {
-    const deletedAt = new Date().toISOString()
-    activeNotifications.value.forEach((notification) => {
-      saveRecord('notifications', { ...notification, deletedAt })
-    })
-    clearNotificationsDialog.value = false
-    $q.notify({ type: 'positive', message: 'Notificaciones movidas al historial.' })
-  } catch (error) {
-    $q.notify({ type: 'negative', message: error.message })
-  }
 }
 
 </script>
@@ -169,7 +200,7 @@ function clearAllNotifications() {
       <q-scroll-area class="nav-scroll">
         <div v-for="(items, group) in groupedLinks" :key="group" class="nav-group" :class="{ 'nav-group-first': group === 'GENERAL' }">
           <div v-if="group !== 'GENERAL'" class="nav-heading">{{ group }}</div>
-          <q-item v-for="link in items" :key="link.name" clickable :active="route.name === link.name || (link.name === 'cycles' && route.name === 'cycle-detail')" active-class="nav-active" class="nav-item" :to="{ name: link.name }">
+          <q-item v-for="link in items" :key="link.name" clickable :active="route.name === link.name || (link.name === 'farms' && route.name === 'lots') || (link.name === 'cycles' && route.name === 'cycle-detail')" active-class="nav-active" class="nav-item" :to="{ name: link.name }">
             <q-item-section avatar><q-icon :name="link.icon" /></q-item-section>
             <q-item-section>{{ link.title }}</q-item-section>
             <q-tooltip v-if="sidebarCollapsed" anchor="center right" self="center left">{{ link.title }}</q-tooltip>
@@ -177,6 +208,10 @@ function clearAllNotifications() {
         </div>
       </q-scroll-area>
       <div class="drawer-footer">
+        <div class="drawer-user" :class="{ 'drawer-user-mini': sidebarCollapsed && !isCompactViewport }">
+          <q-avatar size="34px" class="brand-green-tint brand-green-text">{{ auth.currentUser?.name?.slice(0, 1) }}</q-avatar>
+          <div v-if="!sidebarCollapsed || isCompactViewport" class="drawer-user-copy"><strong>{{ auth.currentUser?.name }}</strong><small>{{ auth.currentUser?.role }}</small></div>
+        </div>
         <q-btn
           flat
           :no-caps="!sidebarCollapsed"
@@ -203,10 +238,12 @@ function clearAllNotifications() {
             <div class="page-heading"><strong>{{ pageTitle }}</strong></div>
           </div>
           <q-space />
-          <q-badge class="network-status" :color="isOnline ? 'grey-2' : 'orange-1'" :text-color="isOnline ? 'grey-8' : 'orange-10'" role="status" :aria-label="isOnline ? 'Conectado a la red' : 'Modo Local Autónomo Activo — Almacenando en caché'">
-            <q-icon :name="isOnline ? 'cloud_done' : 'cloud_off'" class="q-mr-xs" />
-            <span>{{ isOnline ? 'Conectado a la red' : 'Modo Local Autónomo Activo — Almacenando en caché' }}</span>
-          </q-badge>
+          <div class="weather-capsule" role="status" :aria-label="weatherMessage">
+            <q-icon name="wb_cloudy" />
+            <span>{{ weatherLabel }}</span>
+            <small v-if="weatherData?.zoneName">{{ weatherData.zoneName }}</small>
+            <q-tooltip>{{ weatherMessage }}</q-tooltip>
+          </div>
           <div class="notification-anchor">
             <q-btn flat round dense icon="notifications_none" class="header-icon notification-trigger" aria-label="Notificaciones" :aria-expanded="notificationPopover" @click.stop="notificationPopover = !notificationPopover">
               <q-badge v-if="unreadCount" floating color="negative" rounded>{{ unreadCount }}</q-badge>
@@ -214,27 +251,26 @@ function clearAllNotifications() {
             <q-menu v-model="notificationPopover" anchor="bottom right" self="top right" :offset="[0, 10]" class="notification-menu">
               <section class="notification-popover" aria-label="Notificaciones">
                 <div class="notification-popover-title"><h2>Notificaciones</h2><q-badge v-if="unreadCount" color="primary" rounded>{{ unreadCount }}</q-badge></div>
-                <div class="notification-tabs" role="tablist">
-                  <button type="button" role="tab" :aria-selected="notificationTab === 'all'" :class="{ active: notificationTab === 'all' }" @click="notificationTab = 'all'">Todas</button>
-                  <button type="button" role="tab" :aria-selected="notificationTab === 'unread'" :class="{ active: notificationTab === 'unread' }" @click="notificationTab = 'unread'">No leídas</button>
-                  <button type="button" role="tab" :aria-selected="notificationTab === 'history'" :class="{ active: notificationTab === 'history' }" @click="notificationTab = 'history'">Historial</button>
-                </div>
                 <div class="notification-list">
-                  <button v-for="notification in shownNotifications" :key="notification.id" type="button" class="notification-entry" :class="{ unread: isUnread(notification) }" @click="markNotificationRead(notification)">
-                    <q-avatar size="38px" color="green-1" text-color="primary"><q-icon :name="notification.title.toLowerCase().includes('humedad') ? 'water_drop' : 'notifications_active'" /></q-avatar>
+                  <div v-for="notification in notifications" :key="notification.id" class="notification-entry" :class="{ unread: isUnread(notification) }">
+                    <q-avatar size="38px" class="brand-green-tint brand-green-text"><q-icon :name="notification.title.toLowerCase().includes('humedad') ? 'water_drop' : 'notifications_active'" /></q-avatar>
                     <span class="notification-entry-copy"><strong>{{ notification.title }}</strong><span>{{ notification.message }}</span><small>{{ relativeTime(notification.date) }}</small></span>
                     <span v-if="isUnread(notification)" class="notification-unread-dot" aria-label="No leída"></span>
-                  </button>
-                  <div v-if="!shownNotifications.length" class="notification-empty">No hay notificaciones {{ notificationTab === 'unread' ? 'sin leer' : notificationTab === 'history' ? 'en el historial' : 'disponibles' }}.</div>
+                    <div class="notification-entry-actions">
+                      <q-btn flat round dense icon="done" aria-label="Marcar como leída" :disable="!isUnread(notification)" @click="markNotificationRead(notification)"><q-tooltip>Marcar como leída</q-tooltip></q-btn>
+                      <q-btn flat round dense icon="archive" aria-label="Archivar" @click="archiveNotification(notification)"><q-tooltip>Archivar</q-tooltip></q-btn>
+                      <q-btn flat round dense icon="delete_outline" color="negative" aria-label="Eliminar" @click="deleteNotification(notification)"><q-tooltip>Eliminar</q-tooltip></q-btn>
+                    </div>
+                  </div>
+                  <div v-if="!notifications.length" class="notification-empty">No hay notificaciones recientes.</div>
                 </div>
-                <button v-if="canWrite(auth.currentUser, 'notifications') && activeNotifications.length && notificationTab !== 'history'" type="button" class="notification-clear-all" @click="clearNotificationsDialog = true">Borrar todas</button>
                 <button type="button" class="notification-view-all" @click="openAllNotifications">Ver todo</button>
               </section>
             </q-menu>
           </div>
           <q-separator vertical inset class="header-separator" />
           <q-btn flat no-caps class="profile-button">
-            <q-avatar size="34px" color="green-1" text-color="primary">{{ auth.currentUser?.name?.slice(0, 1) }}</q-avatar>
+            <q-avatar size="34px" class="brand-green-tint brand-green-text">{{ auth.currentUser?.name?.slice(0, 1) }}</q-avatar>
             <div class="profile-copy"><strong>{{ auth.currentUser?.name }}</strong><small>{{ auth.currentUser?.role }}</small></div>
             <q-icon name="expand_more" />
             <q-menu><q-list style="min-width: 180px"><q-item clickable v-close-popup @click="logout"><q-item-section avatar><q-icon name="logout" /></q-item-section><q-item-section>Cerrar sesión</q-item-section></q-item></q-list></q-menu>
@@ -243,18 +279,5 @@ function clearAllNotifications() {
       </header>
       <router-view />
     </q-page-container>
-    <q-dialog v-model="clearNotificationsDialog">
-      <q-card class="notification-confirm-dialog">
-        <q-card-section>
-          <div class="section-eyebrow">CONFIRMAR ACCIÓN</div>
-          <h2>Borrar todas las notificaciones</h2>
-          <p>Se moverán {{ activeNotifications.length }} notificaciones al Historial. Podrás consultarlas después.</p>
-        </q-card-section>
-        <q-card-actions align="right">
-          <q-btn flat no-caps label="Cancelar" @click="clearNotificationsDialog = false" />
-          <q-btn unelevated no-caps color="negative" label="Borrar todas" @click="clearAllNotifications" />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
   </q-layout>
 </template>

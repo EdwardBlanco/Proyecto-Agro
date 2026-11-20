@@ -12,7 +12,7 @@ export const entityConfig = {
       { key: 'name', label: 'Nombre del predio', required: true, maxLength: 30 },
       { key: 'municipality', label: 'Municipio', required: true, maxLength: 30, textOnly: true },
       { key: 'department', label: 'Departamento', required: true, maxLength: 30, textOnly: true },
-      { key: 'area', label: 'Área total (HA)', type: 'number', required: true, min: 1, maxLength: 10, step: 0.1 },
+      { key: 'area', label: 'Área total · HA (Hectáreas)', type: 'number', required: true, min: 1, integer: true, maxLength: 10 },
       { key: 'owner', label: 'Responsable', type: 'users', required: true },
       { key: 'status', label: 'Estado', type: 'select', options: ['Activo', 'Inactivo', 'En preparación'], required: true }
     ]
@@ -23,8 +23,9 @@ export const entityConfig = {
     fields: [
       { key: 'name', label: 'Nombre del lote', required: true, maxLength: 30 },
       { key: 'farmId', label: 'Predio', type: 'ref', ...ref('farms'), required: true },
-      { key: 'area', label: 'Área disponible (HA)', type: 'number', required: true, min: 1, maxLength: 10, step: 0.1 },
-      { key: 'soilType', label: 'Tipo de suelo', required: true },
+      { key: 'area', label: 'Área disponible · HA (Hectáreas)', type: 'number', required: true, min: 1, integer: true, maxLength: 10 },
+      { key: 'soilType', label: 'Tipo de suelo', required: true, maxLength: 30, textOnly: true },
+      { key: 'responsible', label: 'Responsable del lote', type: 'users', required: true },
       { key: 'status', label: 'Estado', type: 'select', options: ['Activo', 'Inactivo', 'En preparación'], required: true }
     ]
   },
@@ -32,10 +33,12 @@ export const entityConfig = {
     entity: 'crops', singular: 'cultivo', title: 'Cultivos y catálogo agrícola', description: 'Catálogo de cultivos, variedades, etapas fenológicas e insumos relacionados.',
     columns: [['name', 'Cultivo'], ['variety', 'Variedad'], ['category', 'Categoría'], ['stages', 'Etapas fenológicas'], ['inputsLabel', 'Insumos asociados']],
     fields: [
-      { key: 'name', label: 'Nombre del cultivo', required: true },
-      { key: 'variety', label: 'Variedad', required: true },
+      { key: 'name', label: 'Nombre del cultivo', required: true, maxLength: 40, textOnly: true },
+      { key: 'emoji', label: 'Emoji de referencia', type: 'emoji', default: '🌱', required: true },
+      { key: 'variety', label: 'Variedad', required: true, maxLength: 40, textOnly: true },
       { key: 'category', label: 'Categoría', type: 'select', options: ['Frutal', 'Hortaliza', 'Permanente', 'Cereal', 'Otro'], required: true },
-      { key: 'stages', label: 'Etapas fenológicas (separadas por coma)', type: 'textarea', required: true },
+      { key: 'otherCategory', label: 'Especifica la categoría', required: true, maxLength: 40, textOnly: true, placeholder: 'Escribe la categoría del cultivo' },
+      { key: 'stages', label: 'Etapas fenológicas (separadas por coma)', type: 'textarea', required: true, maxLength: 200 },
       { key: 'inputs', label: 'Insumos asociados', type: 'ref', entity: 'inputs', multiple: true }
     ]
   },
@@ -43,24 +46,25 @@ export const entityConfig = {
     entity: 'inputs', singular: 'insumo', title: 'Insumos y agroquímicos', description: 'Consulta y administra el catálogo de insumos de uso agrícola.',
     columns: [['name', 'Insumo'], ['category', 'Categoría'], ['unit', 'Unidad'], ['stock', 'Existencia'], ['crops', 'Cultivos asociados']],
     fields: [
-      { key: 'name', label: 'Nombre del insumo', required: true },
+      { key: 'name', label: 'Nombre del insumo', required: true, maxLength: 40, textOnly: true },
+      { key: 'emoji', label: 'Emoji de referencia', type: 'emoji', default: '🧪', required: true },
       { key: 'category', label: 'Categoría', type: 'select', options: ['Fertilizante', 'Agroquímico', 'Semilla', 'Correctivo', 'Herramienta', 'Otro'], required: true },
-      { key: 'unit', label: 'Unidad de medida', required: true },
-      { key: 'stock', label: 'Existencia (opcional)', type: 'number', min: 0 },
-      { key: 'crops', label: 'Cultivos asociados', type: 'textarea' }
+      { key: 'unit', label: 'Unidad de medida', type: 'select', options: ['kg', 'toneladas', 'unidades', 'cajas'], required: true },
+      { key: 'stock', label: 'Existencia (opcional)', type: 'number', min: 0, maxLength: 10 },
+      { key: 'crops', label: 'Cultivos asociados', type: 'ref', ...ref('crops'), multiple: true }
     ]
   },
   cycles: {
     entity: 'cycles', singular: 'ciclo productivo', title: 'Ciclos productivos', description: 'Sigue la evolución de cada cultivo desde la siembra hasta la cosecha.',
     columns: [['name', 'Ciclo'], ['farmName', 'Predio'], ['lotName', 'Lote'], ['cropName', 'Cultivo'], ['startDate', 'Inicio'], ['areaLabel', 'Área (HA)'], ['status', 'Estado']],
     fields: [
-      { key: 'name', label: 'Nombre del ciclo', required: true },
+      { key: 'name', label: 'Nombre del ciclo', required: true, maxLength: 60 },
       { key: 'farmId', label: 'Predio', type: 'ref', ...ref('farms'), required: true },
       { key: 'lotId', label: 'Lote', type: 'ref', ...ref('lots'), required: true },
       { key: 'cropId', label: 'Cultivo', type: 'ref', ...ref('crops'), required: true },
       { key: 'startDate', label: 'Fecha de inicio', type: 'date', required: true },
-      { key: 'area', label: 'Área sembrada (HA)', type: 'number', required: true, min: 0.01 },
-      { key: 'target', label: 'Meta de producción (kg)', type: 'number', min: 0 },
+      { key: 'area', label: 'Área sembrada (HA)', type: 'number', required: true, min: 0.01, maxLength: 10 },
+      { key: 'target', label: 'Meta de producción (kg)', type: 'number', min: 0, maxLength: 10 },
       { key: 'status', label: 'Estado del ciclo', type: 'select', options: ['Planeado', 'En curso', 'Finalizado', 'Suspendido'], required: true }
     ]
   },
@@ -69,26 +73,26 @@ export const entityConfig = {
     columns: [['kind', 'Tipo de registro'], ['type', 'Actividad'], ['cycleName', 'Ciclo productivo'], ['date', 'Fecha'], ['responsible', 'Responsable'], ['status', 'Seguimiento']],
     fields: [
       { key: 'kind', label: 'Registro', type: 'select', options: ['Labor', 'Incidencia'], required: true },
-      { key: 'type', label: 'Tipo de labor o incidencia', required: true },
+      { key: 'type', label: 'Tipo de labor o incidencia', required: true, maxLength: 50 },
       { key: 'cycleId', label: 'Ciclo productivo', type: 'ref', ...ref('cycles'), required: true },
       { key: 'date', label: 'Fecha', type: 'date', required: true },
-      { key: 'responsible', label: 'Responsable', required: true },
-      { key: 'description', label: 'Descripción', type: 'textarea', required: true },
+      { key: 'responsible', label: 'Responsable', type: 'users', required: true, role: 'Operario', valueField: 'name' },
+      { key: 'description', label: 'Descripción', type: 'textarea', required: true, maxLength: 300 },
       { key: 'status', label: 'Estado', type: 'select', options: ['Pendiente', 'En seguimiento', 'Completada'], required: true },
-      { key: 'notes', label: 'Observaciones', type: 'textarea' }
+      { key: 'notes', label: 'Observaciones', type: 'textarea', maxLength: 300 }
     ]
   },
   nurseries: {
     entity: 'nurseries', singular: 'semillero', title: 'Semilleros', description: 'Registra siembra, germinación y trasplante de tus semilleros.',
     columns: [['name', 'Semillero'], ['cropName', 'Cultivo'], ['cycleName', 'Ciclo'], ['sowingDate', 'Siembra'], ['germination', 'Germinación (%)'], ['status', 'Estado']],
     fields: [
-      { key: 'name', label: 'Nombre del semillero', required: true },
+      { key: 'name', label: 'Nombre del semillero', required: true, maxLength: 50 },
       { key: 'cropId', label: 'Cultivo', type: 'ref', ...ref('crops'), required: true },
       { key: 'cycleId', label: 'Ciclo asociado (opcional)', type: 'ref', ...ref('cycles') },
       { key: 'sowingDate', label: 'Fecha de siembra', type: 'date', required: true },
       { key: 'germinationDate', label: 'Fecha de germinación', type: 'date' },
       { key: 'transplantDate', label: 'Fecha de trasplante', type: 'date' },
-      { key: 'germination', label: 'Germinación (%)', type: 'number', min: 0, max: 100 },
+      { key: 'germination', label: 'Germinación (%)', type: 'number', min: 0, max: 100, maxLength: 3 },
       { key: 'status', label: 'Estado', type: 'select', options: ['En seguimiento', 'Listo para trasplante', 'Trasplantado', 'Finalizado'], required: true }
     ]
   },
@@ -98,10 +102,10 @@ export const entityConfig = {
     fields: [
       { key: 'cycleId', label: 'Ciclo productivo', type: 'ref', ...ref('cycles'), required: true },
       { key: 'date', label: 'Fecha de cosecha', type: 'date', required: true },
-      { key: 'quantity', label: 'Cantidad', type: 'number', required: true, min: 0.01 },
+      { key: 'quantity', label: 'Cantidad', type: 'number', required: true, min: 0.01, maxLength: 10 },
       { key: 'unit', label: 'Unidad', type: 'select', options: ['kg', 'toneladas', 'unidades', 'cajas'], required: true },
       { key: 'quality', label: 'Clasificación / calidad', type: 'select', options: ['Primera', 'Segunda', 'Tercera', 'Sin clasificar'], required: true },
-      { key: 'notes', label: 'Observaciones', type: 'textarea' }
+      { key: 'notes', label: 'Observaciones', type: 'textarea', maxLength: 300 }
     ]
   },
   telemetry: {
@@ -111,8 +115,8 @@ export const entityConfig = {
       { key: 'farmId', label: 'Predio', type: 'ref', ...ref('farms'), required: true },
       { key: 'lotId', label: 'Lote', type: 'ref', ...ref('lots'), required: true },
       { key: 'variable', label: 'Variable medida', type: 'select', options: ['Humedad del suelo', 'Temperatura', 'Precipitación', 'Humedad ambiental', 'pH'], required: true },
-      { key: 'value', label: 'Valor', type: 'number', required: true },
-      { key: 'unit', label: 'Unidad', required: true },
+      { key: 'value', label: 'Valor', type: 'number', required: true, maxLength: 10 },
+      { key: 'unit', label: 'Unidad', required: true, maxLength: 10 },
       { key: 'date', label: 'Fecha y hora', type: 'datetime-local', required: true }
     ]
   },
@@ -120,23 +124,25 @@ export const entityConfig = {
     entity: 'notifications', singular: 'notificación', title: 'Notificaciones', description: 'Avisos locales sobre eventos y lecturas de demostración.',
     columns: [['title', 'Notificación'], ['message', 'Detalle'], ['date', 'Fecha'], ['status', 'Estado']],
     fields: [
-      { key: 'title', label: 'Título', required: true },
-      { key: 'message', label: 'Detalle', type: 'textarea', required: true },
+      { key: 'title', label: 'Título', required: true, maxLength: 80 },
+      { key: 'message', label: 'Detalle', type: 'textarea', required: true, maxLength: 300 },
       { key: 'date', label: 'Fecha', type: 'date', required: true },
       { key: 'lotId', label: 'Lote relacionado (opcional)', type: 'ref', ...ref('lots') },
-      { key: 'status', label: 'Estado', type: 'select', options: ['Pendiente', 'Atendida'], required: true }
+      { key: 'status', label: 'Estado', type: 'select', options: ['Pendiente', 'Atendida', 'Archivada'], required: true }
     ]
   },
   users: {
     entity: 'users', singular: 'usuario', title: 'Usuarios y permisos', description: 'Administra cuentas del sistema y su acceso a predios.',
-    columns: [['name', 'Nombre'], ['email', 'Correo'], ['role', 'Rol'], ['farmsLabel', 'Predios asignados'], ['activeLabel', 'Estado']],
+    columns: [['name', 'Nombre'], ['email', 'Correo'], ['role', 'Rol'], ['farmsLabel', 'Predios asignados'], ['eppStatus', 'Estado EPP'], ['activeLabel', 'Estado de cuenta']],
     fields: [
-      { key: 'name', label: 'Nombre completo', required: true, maxLength: 40 },
-      { key: 'email', label: 'Correo', type: 'email', required: true },
-      { key: 'password', label: 'Contraseña inicial (opcional, por defecto Agro2026!)', maxLength: 60 },
+      { key: 'name', label: 'Nombre completo', required: true, maxLength: 40, textOnly: true },
+      { key: 'email', label: 'Correo', type: 'email', required: true, maxLength: 254 },
+      { key: 'password', label: 'Contraseña', type: 'password', maxLength: 60 },
       { key: 'role', label: 'Rol', type: 'select', options: ['SuperAdmin', 'Admin', 'Operario'], required: true },
+      { key: 'farmId', label: 'Predio asignado', type: 'ref', ...ref('farms'), required: true },
+      { key: 'eppStatus', label: 'Estado EPP', type: 'select', options: ['Entregado', 'Pendiente'], required: true },
       { key: 'farms', label: 'Predios autorizados', type: 'farms', multiple: true },
-      { key: 'active', label: 'Estado', type: 'select-value', options: [{ label: 'Activo', value: true }, { label: 'Inactivo', value: false }], required: true }
+      { key: 'active', label: 'Estado de cuenta', type: 'select-value', options: [{ label: 'Activo', value: true }, { label: 'Inactivo', value: false }], required: true }
     ]
   }
 }

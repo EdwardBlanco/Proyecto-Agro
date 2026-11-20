@@ -20,10 +20,12 @@ export const useAuthStore = defineStore('auth', () => {
    */
   function persistSession(user, token, remember = true) {
     const resolvedToken = token || getAuthToken() || undefined
+    const sessionUser = { ...user }
+    delete sessionUser.password
     const payload = JSON.stringify({
       ...(resolvedToken ? { token: resolvedToken } : {}),
       userId: user.id,
-      user
+      user: sessionUser
     })
     if (remember) {
       localStorage.setItem(SESSION_KEY, payload)
@@ -50,8 +52,11 @@ export const useAuthStore = defineStore('auth', () => {
       if (raw) {
         const session = JSON.parse(raw)
         const storedUser = session?.user
-          ? mapBackendUserToFrontend(session.user)
+          ? session.token || getAuthToken()
+            ? mapBackendUserToFrontend(session.user)
+            : getRecords('users').find((user) => user.id === session?.userId) ?? session.user
           : getRecords('users').find((user) => user.id === session?.userId) ?? null
+        if (storedUser) delete storedUser.password
         currentUser.value = storedUser && storedUser.active !== false ? storedUser : null
         if (!currentUser.value && !getAuthToken()) {
           localStorage.removeItem(SESSION_KEY)
@@ -100,6 +105,26 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     const email = normalizeLoginEmail(cleanIdentifier)
+    const localUser = getRecords('users').find(
+      (user) => String(user.email ?? '').trim().toLowerCase() === email
+    )
+    if (localUser?.active === false) {
+      throw new Error('La cuenta está inactiva. Contacta al administrador.')
+    }
+    if (localUser && Object.prototype.hasOwnProperty.call(localUser, 'password')) {
+      if (localUser.password !== String(password)) {
+        throw new Error('Correo o contraseña incorrectos.')
+      }
+      const user = { ...localUser }
+      delete user.password
+      clearAuthToken()
+      const rememberSession = Boolean(remember)
+      persistSession(user, null, rememberSession)
+      currentUser.value = user
+      ready.value = true
+      return user
+    }
+
     const data = await apiPost('/auth/login', {
       correo: email,
       contrasena: password
