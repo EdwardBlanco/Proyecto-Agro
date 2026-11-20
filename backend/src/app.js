@@ -2,8 +2,6 @@ import express from 'express';
 import cors from 'cors';
 
 import config from './config/env.js';
-import { connectDB, getDatabaseStatus } from './config/db.js';
-import { seedDemoUsers } from './config/seed.js';
 import AppError from './shared/errors/AppError.js';
 import errorHandler from './middlewares/errorHandler.js';
 
@@ -16,56 +14,17 @@ import dashboardRoutes from './routes/dashboard.routes.js';
 
 const app = express();
 
-let demoSeeded = false;
-const hasConfiguredMongoUri = () => Boolean(process.env.MONGODB_URI || process.env.MONGO_URI);
-
-const ensureServerlessDb = async (req, res, next) => {
-  if (!process.env.VERCEL || config.nodeEnv === 'test' || !hasConfiguredMongoUri()) {
-    return next();
-  }
-
-  try {
-    await connectDB();
-    if (getDatabaseStatus() === 'connected' && !demoSeeded) {
-      demoSeeded = true;
-      try {
-        await seedDemoUsers();
-      } catch (seedError) {
-        console.error('Error al inicializar usuarios demo:', seedError.message);
-      }
-    }
-
-    return next();
-  } catch {
-    return next();
-  }
-};
-
 // Middlewares base (sin morgan ni helmet según directriz de requerimiento)
 app.use(cors({ origin: config.corsOrigin }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Montaje de rutas de la API v1 (se conservan rutas HTTP en español por contrato)
-app.use(
-  '/api/v1/health',
-  async (req, res, next) => {
-    if (
-      process.env.VERCEL &&
-      config.nodeEnv !== 'test' &&
-      hasConfiguredMongoUri() &&
-      getDatabaseStatus() === 'disconnected'
-    ) {
-      await connectDB();
-    }
-    return next();
-  },
-  healthRoutes
-);
-app.use('/api/v1/auth', ensureServerlessDb, authRoutes);
-app.use('/api/v1/usuarios', ensureServerlessDb, usersRoutes);
-app.use('/api/v1/predios', ensureServerlessDb, farmsRoutes);
-app.use('/api/v1/dashboard', ensureServerlessDb, dashboardRoutes);
+app.use('/api/v1/health', healthRoutes);
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/usuarios', usersRoutes);
+app.use('/api/v1/predios', farmsRoutes);
+app.use('/api/v1/dashboard', dashboardRoutes);
 
 // Manejo de rutas inexistentes (404)
 app.all('*', (req, res, next) => {
