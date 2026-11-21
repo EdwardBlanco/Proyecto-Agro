@@ -184,7 +184,16 @@ export function checkApiHealth(options = {}) {
   return apiGet('/health', options)
 }
 
+import { createClient } from '@supabase/supabase-js'
+
+// Configuración de Supabase
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
 export default {
+  supabase,
   API_BASE_URL,
   TOKEN_KEY,
   getAuthToken,
