@@ -35,7 +35,7 @@ export function canWrite(user, module) {
  * Permite gestionar notificaciones personales en la burbuja a todos los roles de la aplicación.
  */
 export function canManageNotificationActions(user) {
-  return Boolean(user && ['SuperAdmin', 'Admin'].includes(user.role))
+  return Boolean(user && ['ADMIN_PRODUCTOR', 'TECNICO_AGRONOMO'].includes(user.role))
 }
 
 /**

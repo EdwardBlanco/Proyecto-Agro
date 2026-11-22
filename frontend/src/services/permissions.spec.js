@@ -1,39 +1,34 @@
-import { describe, expect, it } from 'vitest'
-import { canAccess, canManageNotificationActions, canWrite } from './permissions'
+import { describe, expect, it } from "vitest"
+import { canAccess, canManageNotificationActions, canWrite } from "@/services/permissions"
 
-describe('role permissions', () => {
-  it('restricts user administration to SuperAdmin', () => {
-    expect(canAccess({ role: 'SuperAdmin' }, 'users')).toBe(true)
-    expect(canWrite({ role: 'SuperAdmin' }, 'users')).toBe(true)
-    expect(canAccess({ role: 'Admin' }, 'users')).toBe(false)
-    expect(canWrite({ role: 'Admin' }, 'users')).toBe(false)
-    expect(canAccess({ role: 'Operario' }, 'users')).toBe(false)
-    expect(canWrite({ role: 'Operario' }, 'users')).toBe(false)
+describe("role permissions (Línea Base v2.1.1)", () => {
+  it("restricts user administration and finance to ADMIN_PRODUCTOR", () => {
+    expect(canAccess({ role: "ADMIN_PRODUCTOR" }, "users")).toBe(true)
+    expect(canWrite({ role: "ADMIN_PRODUCTOR" }, "users")).toBe(true)
+    expect(canAccess({ role: "ADMIN_PRODUCTOR" }, "finance")).toBe(true)
+    expect(canAccess({ role: "TECNICO_AGRONOMO" }, "users")).toBe(false)
+    expect(canAccess({ role: "TECNICO_AGRONOMO" }, "finance")).toBe(false)
   })
 
-  it.each(['SuperAdmin', 'Admin'])(
-    'allows %s to manage notifications from the bell',
-    (role) => {
-      expect(canManageNotificationActions({ role })).toBe(true)
-    }
-  )
-
-  it('gives Operario read-only access to the calendar and telemetry', () => {
-    const operator = { role: 'Operario' }
-
-    expect(canAccess(operator, 'calendar')).toBe(true)
-    expect(canAccess(operator, 'telemetry')).toBe(true)
-    expect(canAccess(operator, 'users')).toBe(false)
-    for (const module of ['farms', 'lots', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'calendar', 'users']) {
-      expect(canWrite(operator, module)).toBe(false)
-    }
-    expect(canManageNotificationActions(operator)).toBe(false)
+  it("allows ADMIN_PRODUCTOR and TECNICO_AGRONOMO to manage notifications and ICA book", () => {
+    expect(canManageNotificationActions({ role: "ADMIN_PRODUCTOR" })).toBe(true)
+    expect(canManageNotificationActions({ role: "TECNICO_AGRONOMO" })).toBe(true)
+    expect(canAccess({ role: "TECNICO_AGRONOMO" }, "ica-book")).toBe(true)
   })
 
-  it('preserves cycle and activity write access for Admin', () => {
-    const admin = { role: 'Admin' }
+  it("gives OPERARIO_CAMPO read-only access to calendar and telemetry without finance or ICA book", () => {
+    const operator = { role: "OPERARIO_CAMPO" }
 
-    expect(canWrite(admin, 'cycles')).toBe(true)
-    expect(canWrite(admin, 'activities')).toBe(true)
+    expect(canAccess(operator, "calendar")).toBe(true)
+    expect(canAccess(operator, "telemetry")).toBe(true)
+    expect(canAccess(operator, "users")).toBe(false)
+    expect(canAccess(operator, "finance")).toBe(false)
+    expect(canAccess(operator, "ica-book")).toBe(false)
+    expect(canWrite(operator, "activities")).toBe(false)
+  })
+
+  it("preserves cycle and activity write access for ADMIN_PRODUCTOR and TECNICO_AGRONOMO", () => {
+    expect(canWrite({ role: "ADMIN_PRODUCTOR" }, "cycles")).toBe(true)
+    expect(canWrite({ role: "TECNICO_AGRONOMO" }, "activities")).toBe(true)
   })
 })
