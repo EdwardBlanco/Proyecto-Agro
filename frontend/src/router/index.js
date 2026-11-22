@@ -14,6 +14,9 @@ import RecordsPage from '@/features/records/pages/RecordsPage.vue'
 import CycleDetailPage from '@/features/records/pages/CycleDetailPage.vue'
 import AgriculturalCalendarPage from '@/features/calendar/pages/AgriculturalCalendarPage.vue'
 import OperatorDashboardPage from '@/features/operator/pages/OperatorDashboardPage.vue'
+import TelemetryPage from '@/features/iot/pages/TelemetryPage.vue'
+import FinancePage from '@/features/finance/pages/FinancePage.vue'
+import IcaBookPage from '@/features/ica-book/pages/IcaBookPage.vue'
 import useOfflineSyncStore from '@/stores/offlineSync'
 
 // Definición de rutas públicas (login) y rutas protegidas bajo AppLayout
@@ -36,7 +39,9 @@ const routes = [
       { path: 'activities', name: 'activities', component: RecordsPage, meta: { module: 'activities', title: 'Labores e incidencias' } },
       { path: 'nurseries', name: 'nurseries', component: RecordsPage, meta: { module: 'nurseries', title: 'Semilleros' } },
       { path: 'harvests', name: 'harvests', component: RecordsPage, meta: { module: 'harvests', title: 'Cosechas' } },
-      { path: 'telemetry', name: 'telemetry', component: RecordsPage, meta: { module: 'telemetry', title: 'Telemetría simulada' } },
+      { path: 'telemetry', name: 'telemetry', component: TelemetryPage, meta: { module: 'telemetry', title: 'Telemetría IoT' } },
+      { path: 'finance', name: 'finance', component: FinancePage, meta: { module: 'finance', title: 'Finanzas y Márgenes' } },
+      { path: 'ica-book', name: 'ica-book', component: IcaBookPage, meta: { module: 'ica-book', title: 'Libro Oficial ICA' } },
       { path: 'notifications', name: 'notifications', component: RecordsPage, meta: { module: 'notifications', title: 'Notificaciones' } },
       { path: 'users', name: 'users', component: RecordsPage, meta: { module: 'users', title: 'Usuarios y permisos' } }
     ]

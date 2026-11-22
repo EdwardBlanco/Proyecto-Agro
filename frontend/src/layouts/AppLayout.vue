@@ -42,7 +42,9 @@ const links = [
   { title: 'Labores e incidencias', icon: 'event_note', name: 'activities', module: 'activities', group: 'PRODUCCIÓN' },
   { title: 'Semilleros', icon: 'spa', name: 'nurseries', module: 'nurseries', group: 'PRODUCCIÓN' },
   { title: 'Cosechas', icon: 'agriculture', name: 'harvests', module: 'harvests', group: 'PRODUCCIÓN' },
-  { title: 'Telemetría', icon: 'sensors', name: 'telemetry', module: 'telemetry', group: 'MONITOREO' },
+  { title: 'Telemetría IoT', icon: 'sensors', name: 'telemetry', module: 'telemetry', group: 'MONITOREO' },
+  { title: 'Finanzas y Márgenes', icon: 'payments', name: 'finance', module: 'finance', group: 'GERENCIA Y BPA' },
+  { title: 'Libro Oficial ICA', icon: 'verified_user', name: 'ica-book', module: 'ica-book', group: 'GERENCIA Y BPA' },
   { title: 'Usuarios y permisos', icon: 'groups', name: 'users', module: 'users', group: 'ADMINISTRACIÓN' }
 ]
 const visibleLinks = computed(() => links.filter((link) =>

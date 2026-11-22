@@ -5,8 +5,8 @@
 
 // Módulos visibles en navegación y rutas para cada rol
 const access = {
-  ADMIN_PRODUCTOR: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'calendar', 'notifications', 'users'],
-  TECNICO_AGRONOMO: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'calendar', 'notifications'],
+  ADMIN_PRODUCTOR: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'finance', 'ica-book', 'calendar', 'notifications', 'users'],
+  TECNICO_AGRONOMO: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'ica-book', 'calendar', 'notifications'],
   OPERARIO_CAMPO: ['dashboard', 'farms', 'lots', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'calendar', 'notifications']
 };
 
