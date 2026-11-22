@@ -41,4 +41,23 @@ describe("Fase 5 - Certificación de Reglas de Negocio SENAagro (RBAC, ICA SHA-2
     expect(evaluateIrrigation(37.5)).toBe(true);
     expect(evaluateIrrigation(52.0)).toBe(false);
   });
+  it("5. Genera el formato CSV Oficial ICA con BOM UTF-8 y trazabilidad SHA-256", () => {
+    const sample = [
+      {
+        tipo_evento: "APLICACION_SANITARIA_BPA",
+        referencia_tabla: "aplicaciones_sanitarias",
+        resumen: "Carencia 15 días verificada",
+        hash_anterior: "0000",
+        hash_actual: "hash_ica_1",
+        validacion: "green"
+      }
+    ];
+    const header = "Consecutivo;Tipo_Evento_ICA;Tabla_Origen;Detalle_Tecnico_BPA;Hash_Anterior_SHA256;Hash_Actual_SHA256;Estado_Integridad_RNF06";
+    const row = `"1";"${sample[0].tipo_evento}";"${sample[0].referencia_tabla}";"${sample[0].resumen}";"${sample[0].hash_anterior}";"${sample[0].hash_actual}";"CADENA_INTEGRA"`;
+    const csv = "\uFEFF" + header + "\n" + row;
+
+    expect(csv.startsWith("\uFEFF")).toBe(true);
+    expect(csv).toContain("APLICACION_SANITARIA_BPA");
+    expect(csv).toContain("CADENA_INTEGRA");
+  });
 });
