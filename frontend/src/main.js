@@ -13,7 +13,6 @@ document.title = import.meta.env.VITE_APP_NAME || 'SENAgro'
 initializeStorage()
 
 const pinia = createPinia()
-pinia.use(createPersistedState())
 
 createApp(App)
   .use(pinia)
