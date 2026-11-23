@@ -1,12 +1,3 @@
-import {
-  changeMockFarmStatus,
-  createMockFarm,
-  findMockFarmById,
-  isMockDbMode,
-  listMockFarms,
-  serializeMockFarm,
-  updateMockFarm
-} from '../config/mockStore.js';
 import AppError from '../shared/errors/AppError.js';
 import { Farm } from '../models/Farm.model.js';
 
@@ -23,10 +14,6 @@ import { Farm } from '../models/Farm.model.js';
  * @returns {Promise<object>} Predio creado serializado a JSON
  */
 export const createFarm = async ({ nombre, ubicacion, latitud, longitud, area_m2, estado, responsable }) => {
-  if (isMockDbMode()) {
-    return createMockFarm({ nombre, ubicacion, latitud, longitud, area_m2, estado, responsable });
-  }
-
   const farm = new Farm({
     nombre: nombre.trim(),
     ubicacion: ubicacion.trim(),
@@ -53,10 +40,6 @@ export const createFarm = async ({ nombre, ubicacion, latitud, longitud, area_m2
  * @returns {Promise<{predios: object[], total: number, page: number, limit: number, totalPages: number}>} Resultado paginado
  */
 export const listFarms = async ({ estado, q, page = 1, limit = 10 } = {}) => {
-  if (isMockDbMode()) {
-    return listMockFarms({ estado, q, page, limit });
-  }
-
   const query = {};
 
   if (estado !== undefined) {
@@ -98,14 +81,6 @@ export const listFarms = async ({ estado, q, page = 1, limit = 10 } = {}) => {
  * @returns {Promise<object>} Predio encontrado en formato JSON
  */
 export const getFarmById = async (id) => {
-  if (isMockDbMode()) {
-    const mockFarm = findMockFarmById(id);
-    if (!mockFarm) {
-      throw new AppError('Predio no encontrado', 404);
-    }
-    return serializeMockFarm(mockFarm);
-  }
-
   const farm = await Farm.findById(id);
   if (!farm) {
     throw new AppError('Predio no encontrado', 404);
@@ -121,10 +96,6 @@ export const getFarmById = async (id) => {
  * @returns {Promise<object>} Predio actualizado en formato JSON
  */
 export const updateFarm = async (id, data) => {
-  if (isMockDbMode()) {
-    return updateMockFarm(id, data);
-  }
-
   const farm = await Farm.findById(id);
   if (!farm) {
     throw new AppError('Predio no encontrado', 404);
@@ -171,10 +142,6 @@ export const updateFarm = async (id, data) => {
  * @returns {Promise<object>} Predio con el estado actualizado en formato JSON
  */
 export const changeFarmStatus = async (id, estado) => {
-  if (isMockDbMode()) {
-    return changeMockFarmStatus(id, estado);
-  }
-
   const farm = await Farm.findById(id);
   if (!farm) {
     throw new AppError('Predio no encontrado', 404);

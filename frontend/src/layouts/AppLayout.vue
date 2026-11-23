@@ -28,7 +28,7 @@ const isCompactViewport = ref(window.innerWidth < 1024)
 const notificationPopover = ref(false)
 const weatherData = ref(null)
 const weatherState = ref('loading')
-const isOperator = computed(() => auth.currentUser?.role === 'Operario')
+const isOperator = computed(() => auth.currentUser?.role === 'OPERARIO_CAMPO')
 
 // Catálogo de rutas del menú lateral agrupadas por área funcional
 const links = [
@@ -42,7 +42,9 @@ const links = [
   { title: 'Labores e incidencias', icon: 'event_note', name: 'activities', module: 'activities', group: 'PRODUCCIÓN' },
   { title: 'Semilleros', icon: 'spa', name: 'nurseries', module: 'nurseries', group: 'PRODUCCIÓN' },
   { title: 'Cosechas', icon: 'agriculture', name: 'harvests', module: 'harvests', group: 'PRODUCCIÓN' },
-  { title: 'Telemetría', icon: 'sensors', name: 'telemetry', module: 'telemetry', group: 'MONITOREO' },
+  { title: 'Telemetría IoT', icon: 'sensors', name: 'telemetry', module: 'telemetry', group: 'MONITOREO' },
+  { title: 'Finanzas y Márgenes', icon: 'payments', name: 'finance', module: 'finance', group: 'GERENCIA Y BPA' },
+  { title: 'Libro Oficial ICA', icon: 'verified_user', name: 'ica-book', module: 'ica-book', group: 'GERENCIA Y BPA' },
   { title: 'Usuarios y permisos', icon: 'groups', name: 'users', module: 'users', group: 'ADMINISTRACIÓN' }
 ]
 const visibleLinks = computed(() => links.filter((link) =>
@@ -71,27 +73,31 @@ function updateViewportStatus() {
   isCompactViewport.value = window.innerWidth < 1024
 }
 
-function loadWeather() {
+async function loadWeather() {
+  weatherState.value = 'loading'
+  const loadFallbackZoneWeather = async () => {
+    weatherData.value = await getCurrentWeather()
+    weatherState.value = weatherData.value ? 'ready' : 'no-data'
+  }
+
   if (!navigator.geolocation) {
-    weatherState.value = 'unavailable'
+    await loadFallbackZoneWeather()
     return
   }
-  weatherState.value = 'loading'
+
   try {
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
       try {
         weatherData.value = await getCurrentWeather({ lat: coords.latitude, lon: coords.longitude })
         weatherState.value = weatherData.value ? 'ready' : 'no-data'
-      } catch (error) {
-        console.error('No fue posible cargar el clima.', error)
-        weatherState.value = 'no-data'
+      } catch {
+        await loadFallbackZoneWeather()
       }
-    }, (error) => {
-      weatherState.value = error.code === 1 ? 'permission' : 'no-data'
-    }, { maximumAge: 300000, timeout: 10000 })
-  } catch (error) {
-    console.error('No fue posible solicitar la ubicación.', error)
-    weatherState.value = 'unavailable'
+    }, async () => {
+      await loadFallbackZoneWeather()
+    }, { maximumAge: 300000, timeout: 5000 })
+  } catch {
+    await loadFallbackZoneWeather()
   }
 }
 
@@ -103,7 +109,7 @@ const weatherMessage = computed(() => ({
   permission: 'La ubicación no está autorizada.',
   unavailable: 'La ubicación no está disponible en este dispositivo.',
   'no-data': 'No hay datos del clima disponibles.',
-  ready: 'Clima de tu zona.'
+  ready: `Clima actual · ${weatherData.value?.zoneName || "San Gil, Santander"}`
 })[weatherState.value])
 
 onMounted(() => {

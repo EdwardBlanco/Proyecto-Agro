@@ -1,11 +1,5 @@
 import jwt from 'jsonwebtoken';
 import config from '../config/env.js';
-import {
-  findMockUserByEmail,
-  findMockUserById,
-  isMockDbMode,
-  serializeMockUser
-} from '../config/mockStore.js';
 import AppError from '../shared/errors/AppError.js';
 import { User } from '../models/User.model.js';
 
@@ -20,39 +14,6 @@ import { User } from '../models/User.model.js';
  */
 export const login = async ({ correo, contrasena }) => {
   const normalizedEmail = correo ? correo.toLowerCase().trim() : '';
-
-  if (isMockDbMode()) {
-    const mockUser = findMockUserByEmail(normalizedEmail);
-    if (!mockUser) {
-      throw new AppError('Credenciales inválidas', 401);
-    }
-
-    if (!mockUser.estado) {
-      throw new AppError('Usuario inactivo. Comuníquese con el administrador', 401);
-    }
-
-    if (mockUser.contrasena_plain !== contrasena) {
-      throw new AppError('Credenciales inválidas', 401);
-    }
-
-    const token = jwt.sign(
-      {
-        uid: mockUser._id,
-        id: mockUser._id,
-        usuario_id: mockUser._id,
-        rol: mockUser.rol,
-        correo: mockUser.correo
-      },
-      config.jwtSecret,
-      { expiresIn: config.jwtExpiresIn }
-    );
-
-    return {
-      token,
-      usuario: serializeMockUser(mockUser)
-    };
-  }
-
   // Se incluye explícitamente contrasena_hash porque está excluido por defecto en el esquema
   const user = await User.findOne({ correo: normalizedEmail }).select('+contrasena_hash');
 
@@ -95,14 +56,6 @@ export const login = async ({ correo, contrasena }) => {
  * @returns {Promise<object>} Objeto JSON con los datos del perfil del usuario
  */
 export const getProfile = async (userId) => {
-  if (isMockDbMode()) {
-    const mockUser = findMockUserById(userId);
-    if (!mockUser) {
-      throw new AppError('Usuario no encontrado', 404);
-    }
-    return serializeMockUser(mockUser);
-  }
-
   const user = await User.findById(userId);
   if (!user) {
     throw new AppError('Usuario no encontrado', 404);

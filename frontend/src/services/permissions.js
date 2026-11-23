@@ -5,17 +5,17 @@
 
 // Módulos visibles en navegación y rutas para cada rol
 const access = {
-  SuperAdmin: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'calendar', 'notifications', 'users'],
-  Admin: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'calendar', 'notifications'],
-  Operario: ['dashboard', 'farms', 'lots', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'calendar', 'notifications']
-}
+  ADMIN_PRODUCTOR: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'finance', 'ica-book', 'calendar', 'notifications', 'users'],
+  TECNICO_AGRONOMO: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'ica-book', 'calendar', 'notifications'],
+  OPERARIO_CAMPO: ['dashboard', 'farms', 'lots', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'calendar', 'notifications']
+};
 
 // Módulos en los que cada rol puede crear, editar o eliminar registros
 const writeAccess = {
-  SuperAdmin: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'users'],
-  Admin: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry'],
-  Operario: []
-}
+  ADMIN_PRODUCTOR: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'users'],
+  TECNICO_AGRONOMO: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry'],
+  OPERARIO_CAMPO: []
+};
 
 /**
  * Indica si el usuario tiene permiso de lectura sobre un módulo específico.
@@ -35,7 +35,7 @@ export function canWrite(user, module) {
  * Permite gestionar notificaciones personales en la burbuja a todos los roles de la aplicación.
  */
 export function canManageNotificationActions(user) {
-  return Boolean(user && ['SuperAdmin', 'Admin'].includes(user.role))
+  return Boolean(user && ['ADMIN_PRODUCTOR', 'TECNICO_AGRONOMO'].includes(user.role))
 }
 
 /**

@@ -1356,7 +1356,7 @@ watch(() => [route.name, route.params.farmId, route.query.cycle], () => {
         </template>
       </q-table>
       <div v-if="filteredRows.length" class="row q-col-gutter-md record-card-grid" :class="{ 'record-card-grid-always': useVisualCards }" aria-label="Registros">
-        <div v-for="row in filteredRows" :key="row.id" :class="config.entity === 'lots' ? 'col-12 col-sm-6 col-md-4 col-lg-4' : 'col-12 col-sm-6 col-md-4 col-lg-3'">
+        <div v-for="row in filteredRows" :key="row.id" :class="['lots', 'inputs', 'crops'].includes(config.entity) ? 'col-12 col-md-6 col-lg-4' : 'col-12 col-sm-6 col-md-4 col-lg-3'">
           <q-card flat bordered class="record-mobile-card" :class="{ 'farm-compact-card': config.entity === 'farms', 'lot-compact-card': config.entity === 'lots' }">
             <template v-if="config.entity === 'farms'">
               <q-card-section class="compact-card-heading">
