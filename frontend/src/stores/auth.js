@@ -7,7 +7,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { apiGet, apiPost, clearAuthToken, getAuthToken, setAuthToken, TOKEN_KEY } from '@/services/api'
 import { mapBackendUserToFrontend, normalizeLoginEmail } from '@/services/mappers'
-import { getRecords } from '@/services/storage'
+import { getDemoAccounts, getRecords } from '@/services/storage'
 
 export const SESSION_KEY = 'agrogestion.session.v1'
 
@@ -125,10 +125,31 @@ export const useAuthStore = defineStore('auth', () => {
       return user
     }
 
-    const data = await apiPost('/auth/login', {
-      correo: email,
-      contrasena: password
-    })
+    let data = null
+    try {
+      data = await apiPost('/auth/login', {
+        correo: email,
+        contrasena: password
+      })
+    } catch (error) {
+      const isOfflineOrNoBackend = !error?.status || error.status >= 500 || error.status === 404
+      const demoAccount = getDemoAccounts().find(
+        (acc) => String(acc.email ?? '').trim().toLowerCase() === email
+      )
+      if (isOfflineOrNoBackend && localUser && demoAccount) {
+        if (demoAccount.password !== String(password)) {
+          throw new Error('Correo o contraseña incorrectos.')
+        }
+        const user = { ...localUser }
+        delete user.password
+        clearAuthToken()
+        persistSession(user, null, Boolean(remember))
+        currentUser.value = user
+        ready.value = true
+        return user
+      }
+      throw error
+    }
 
     const rawUser = data?.usuario ?? data?.user ?? data
     const token = data?.token ?? null
