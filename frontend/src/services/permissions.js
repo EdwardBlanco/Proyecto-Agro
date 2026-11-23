@@ -5,17 +5,17 @@
 
 // Módulos visibles en navegación y rutas para cada rol
 const access = {
-  SuperAdmin: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications', 'users'],
-  Admin: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications', 'users'],
-  Operario: ['dashboard', 'farms', 'lots', 'cycles', 'activities', 'nurseries', 'harvests', 'notifications']
-}
+  ADMIN_PRODUCTOR: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'finance', 'ica-book', 'calendar', 'notifications', 'users'],
+  TECNICO_AGRONOMO: ['dashboard', 'farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'ica-book', 'calendar', 'notifications'],
+  OPERARIO_CAMPO: ['dashboard', 'farms', 'lots', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'calendar', 'notifications']
+};
 
 // Módulos en los que cada rol puede crear, editar o eliminar registros
 const writeAccess = {
-  SuperAdmin: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'notifications', 'users'],
-  Admin: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'users'],
-  Operario: ['activities', 'nurseries', 'harvests']
-}
+  ADMIN_PRODUCTOR: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry', 'users'],
+  TECNICO_AGRONOMO: ['farms', 'lots', 'crops', 'inputs', 'cycles', 'activities', 'nurseries', 'harvests', 'telemetry'],
+  OPERARIO_CAMPO: []
+};
 
 /**
  * Indica si el usuario tiene permiso de lectura sobre un módulo específico.
@@ -32,11 +32,16 @@ export function canWrite(user, module) {
 }
 
 /**
- * Retorna null cuando el rol tiene visibilidad global sobre todos los predios,
- * o el listado de IDs de predios asignados cuando el acceso está restringido (Operario).
+ * Permite gestionar notificaciones personales en la burbuja a todos los roles de la aplicación.
+ */
+export function canManageNotificationActions(user) {
+  return Boolean(user && ['ADMIN_PRODUCTOR', 'TECNICO_AGRONOMO'].includes(user.role))
+}
+
+/**
+ * Retorna null para el SuperAdmin, que tiene visibilidad global, y los predios
+ * asignados para Admin y Operario.
  */
 export function visibleFarmIds(user) {
-  return user?.role === 'SuperAdmin' || user?.role === 'Admin'
-    ? null
-    : user?.farms ?? []
+  return user?.role === 'SuperAdmin' ? null : user?.farms ?? []
 }

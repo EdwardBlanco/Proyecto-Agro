@@ -10,16 +10,32 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { useAuthStore } from '@/stores/auth'
-import { canAccess, canWrite, visibleFarmIds } from '@/services/permissions'
+import { canAccess, canManageNotificationActions, canWrite, visibleFarmIds } from '@/services/permissions'
 import { getRecord, getRecords, removeRecord, saveRecord } from '@/services/storage'
+import {
+  archiveNotification,
+  deleteNotification,
+  isNotificationArchived,
+  isNotificationUnread,
+  markNotificationRead,
+  unarchiveNotification
+} from '@/services/notifications'
 import { getAuthToken } from '@/services/api'
 import { changeFarmStatus, createFarm, fetchFarms, updateFarm } from '@/services/farms.service'
 import { changeUserStatus, createUser, fetchUsers, updateUser } from '@/services/users.service'
 import { entityConfig } from '@/features/records/config'
 import RecordFormField from '@/features/records/components/RecordFormField.vue'
+import BackButton from '@/components/BackButton.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import KpiCard from '@/components/KpiCard.vue'
+import ProgressBar from '@/components/ProgressBar.vue'
+import StatusBadge from '@/components/StatusBadge.vue'
 import farmPlaceholder from '@/assets/farm-placeholder.svg'
 import lotPlaceholder from '@/assets/lot-placeholder.svg'
 import { getResponsibleUsers } from '@/services/mock/users'
+import { formatDateTime } from '@/services/dates'
+import { harvestKilograms } from '@/services/production'
+import { isFieldVisible, validateConfiguredFields } from '@/features/records/validation'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,39 +43,63 @@ const $q = useQuasar()
 const auth = useAuthStore()
 const config = computed(() => entityConfig[String(route.name)])
 const useVisualCards = computed(() => ['farms', 'lots', 'crops', 'inputs'].includes(config.value.entity))
-const activeFarmId = computed(() => config.value.entity === 'lots' && typeof route.query.farm === 'string' ? route.query.farm : '')
+const activeFarmId = computed(() => config.value.entity === 'lots' && typeof route.params.farmId === 'string' ? route.params.farmId : '')
 const activeFarm = computed(() => activeFarmId.value ? getRecord('farms', activeFarmId.value) : null)
-const farmPanelFarm = ref(null)
-const farmLotsPanel = ref(false)
-const farmPanelLots = computed(() => getRecords('lots').filter((lot) => lot.farmId === farmPanelFarm.value?.id))
-const search = ref('')
+const localUserManagement = computed(() => config.value.entity === 'users' && auth.currentUser?.role === 'Admin')
+const formFields = computed(() => {
+  if (config.value.entity !== 'users') return config.value.fields
+  const isAdmin = auth.currentUser?.role === 'Admin'
+  return config.value.fields
+    .filter((field) => isAdmin ? field.key !== 'farms' : field.key !== 'farmId')
+    .filter((field) => !(field.key === 'password' && editing.value && !isAdmin))
+    .map((field) => {
+      if (field.key === 'role' && isAdmin) {
+        return { ...field, options: field.options.filter((role) => role !== 'SuperAdmin') }
+      }
+      if (field.key === 'password' && isAdmin) {
+        return {
+          ...field,
+          required: !editing.value,
+          label: editing.value ? 'Contraseña (vacío = no cambiar)' : 'Contraseña'
+        }
+      }
+      return field
+    })
+})
 const enumFilter = ref('')
-const notificationView = ref('active')
 const telemetryFilters = ref({ farmId: '', lotId: '', variable: '', from: '', to: '' })
 const dialog = ref(false)
-const detailDialog = ref(false)
 const deleteDialog = ref(false)
 const deleteStep = ref(1)
 const deleteReady = ref(false)
 const deleteTimer = ref(null)
 const deleteConfirmationText = ref('')
-const bulkDeleteDialog = ref(false)
-const imageFile = ref(null)
-const imageData = ref('')
-const imageLoading = ref(false)
 const pendingDelete = ref(null)
 const editing = ref(null)
-const selected = ref(null)
 const form = ref({})
 const formRef = ref(null)
 const activityStep = ref(1)
 const activityFieldGroups = [
-  { name: 1, title: 'Seleccionar ciclo', caption: 'El ciclo productivo define el lote de trabajo.', fields: ['cycleId'] },
-  { name: 2, title: 'Labor o incidencia', caption: 'Describe el tipo de actividad y el trabajo realizado.', fields: ['kind', 'type', 'description', 'notes'] },
-  { name: 3, title: 'Responsable y seguimiento', caption: 'Asigna quién realizó el registro y su estado.', fields: ['responsible', 'date', 'status'] }
+  { name: 1, title: 'Actividad y programación', caption: 'Relaciona la labor o incidencia con el ciclo y su fecha.', fields: ['cycleId', 'kind', 'type', 'date', 'time'] },
+  { name: 2, title: 'Ejecución y trazabilidad', caption: 'Registra recursos, productos aplicados y seguimiento disponible.', fields: ['description', 'inputIds', 'applicationType', 'applications', 'equipmentUsed', 'evidenceReferences', 'priority', 'correctiveAction', 'followUpDate', 'notes'] },
+  { name: 3, title: 'Responsables y estado', caption: 'Identifica al responsable, participantes y estado del registro.', fields: ['responsible', 'participants', 'status'] }
 ]
-const canEdit = computed(() => canWrite(auth.currentUser, config.value.entity))
-const activityFieldsForStep = (step) => config.value.fields.filter((field) => activityFieldGroups[step - 1].fields.includes(field.key))
+const canEdit = computed(() => config.value.entity !== 'notifications' && canWrite(auth.currentUser, config.value.entity))
+const canAdd = computed(() => canEdit.value && config.value.entity !== 'telemetry')
+const fieldIsVisible = (field) => field.key !== 'otherCategory'
+  ? isFieldVisible(field, form.value)
+  : form.value.category === 'Otro'
+const visibleFormFields = computed(() => formFields.value.filter(fieldIsVisible))
+const formSections = computed(() => {
+  const sections = config.value.sections ?? [{ title: 'Información del registro', fields: config.value.fields.map((field) => field.key) }]
+  return sections.map((section) => ({
+    ...section,
+    fields: visibleFormFields.value.filter((field) => section.fields.includes(field.key))
+  })).filter((section) => section.fields.length)
+})
+const activityFieldsForStep = (step) => config.value.fields
+  .filter((field) => activityFieldGroups[step - 1].fields.includes(field.key))
+  .filter(fieldIsVisible)
 
 const allRecords = computed(() => getRecords(config.value.entity))
 const allowedFarmIds = computed(() => visibleFarmIds(auth.currentUser))
@@ -76,6 +116,7 @@ const telemetryLotOptions = computed(() => getRecords('lots')
  */
 function relatedFarmId(entity, item) {
   if (entity === 'farms') return item.id
+  if (entity === 'users') return (item.farms ?? []).find((farmId) => allowedFarmIds.value?.includes(farmId))
   if (entity === 'lots' || entity === 'cycles' || entity === 'telemetry') return item.farmId
   if (entity === 'activities' || entity === 'harvests') return getRecord('cycles', item.cycleId)?.farmId
   if (entity === 'nurseries') return getRecord('cycles', item.cycleId)?.farmId
@@ -87,13 +128,58 @@ function relatedFarmId(entity, item) {
  * Determina si un registro es visible para el usuario actual según visibleFarmIds().
  */
 function isVisible(item) {
+  if (auth.currentUser?.role === 'Operario') {
+    if (config.value.entity === 'activities') {
+      const identity = [auth.currentUser.id, auth.currentUser.name].filter(Boolean).map(String)
+      if (!identity.includes(String(item.responsible ?? '').trim())) return false
+    }
+  }
   if (!allowedFarmIds.value) return true
   const farmId = relatedFarmId(config.value.entity, item)
-  return !farmId || allowedFarmIds.value.includes(farmId)
+  if (farmId) return allowedFarmIds.value.includes(farmId)
+  return ['crops', 'inputs'].includes(config.value.entity)
 }
 
 function nameOf(entity, id) {
   return getRecord(entity, id)?.name ?? getRecord(entity, id)?.title ?? '—'
+}
+
+const missingData = 'Sin datos registrados'
+
+function formatMetric(value) {
+  return Number(value).toLocaleString('es-CO', { maximumFractionDigits: 2 })
+}
+
+function formatDateLabel(value) {
+  const date = String(value ?? '').slice(0, 10)
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : missingData
+}
+
+function getHarvestKilograms(harvest) {
+  if (!['kg', 'toneladas'].includes(harvest.unit) || harvest.quantity === null || harvest.quantity === undefined || harvest.quantity === '') return null
+  return Number.isFinite(Number(harvest.quantity)) ? harvestKilograms(harvest) : null
+}
+
+function mostRecentRecord(records) {
+  return records
+    .filter((item) => Number.isFinite(Date.parse(item.date)))
+    .reduce((latest, item) => !latest || Date.parse(item.date) > Date.parse(latest.date) ? item : latest, null)
+}
+
+function getInputAvailability(stock) {
+  if (stock === null || stock === undefined || stock === '') return missingData
+  const quantity = Number(stock)
+  if (!Number.isFinite(quantity)) return missingData
+  return quantity === 0 ? 'Agotado' : missingData
+}
+
+function userEmailRule(value) {
+  if (!value) return true
+  const email = String(value).trim().toLowerCase()
+  return !getRecords('users').some((user) =>
+    String(user.email ?? '').trim().toLowerCase() === email && user.id !== editing.value
+  ) || 'Ya existe una cuenta con ese correo.'
 }
 
 /**
@@ -101,24 +187,46 @@ function nameOf(entity, id) {
  */
 function displayRow(item) {
   const row = { ...item }
-  if (item.area !== undefined) row.areaLabel = `${formatArea(item.area)} HA`
+  if (item.area !== null && item.area !== undefined && item.area !== '') row.areaLabel = `${formatArea(item.area)} HA`
   if (item.farmId) row.farmName = nameOf('farms', item.farmId)
   if (item.lotId) row.lotName = nameOf('lots', item.lotId)
   if (item.cropId) row.cropName = nameOf('crops', item.cropId)
   if (item.cycleId) row.cycleName = nameOf('cycles', item.cycleId)
   if (config.value.entity === 'lots') {
-    const cycle = getRecords('cycles').find((entry) => entry.lotId === item.id && entry.status === 'En curso')
-    row.cropName = cycle ? nameOf('crops', cycle.cropId) : 'Sin cultivo activo'
-    row.latestHumidity = getRecords('telemetry')
-      .filter((reading) => reading.lotId === item.id && reading.variable === 'Humedad del suelo')
-      .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())[0]?.value
+    const cycles = getRecords('cycles').filter((entry) => entry.lotId === item.id)
+    const cropIds = [...new Set(cycles.map((cycle) => cycle.cropId).filter(Boolean))]
+    row.cropName = cropIds.map((id) => getRecord('crops', id)?.name).filter(Boolean).join(', ') || missingData
+    row.cycleName = cycles.map((cycle) => cycle.name).filter(Boolean).join(', ') || missingData
   }
   if (config.value.entity === 'crops') row.inputsLabel = (item.inputs ?? []).map((id) => nameOf('inputs', id)).join(', ') || 'Sin insumos'
-  if (config.value.entity === 'farms') row.lotsCount = getRecords('lots').filter((lot) => lot.farmId === item.id).length
-  if (config.value.entity === 'users') {
-    row.farmsLabel = (item.farms ?? []).map((id) => nameOf('farms', id)).join(', ') || 'Sin asignación'
-    row.activeLabel = item.active ? 'Activo' : 'Inactivo'
+  if (config.value.entity === 'inputs') {
+    row.crops = (Array.isArray(item.crops) ? item.crops : []).map((id) => nameOf('crops', id)).join(', ') || 'Sin cultivos asociados'
+    const stock = Number(item.stock)
+    row.stockLabel = item.stock === null || item.stock === undefined || item.stock === '' || !Number.isFinite(stock)
+      ? missingData
+      : `${formatMetric(stock)}${item.unit ? ` ${item.unit}` : ''}`
+    row.availabilityStatus = getInputAvailability(item.stock)
   }
+  if (config.value.entity === 'activities' && getRecord('users', item.responsible)) {
+    row.responsible = getRecord('users', item.responsible).name
+  }
+  if (config.value.entity === 'farms') {
+    row.lotsCount = getRecords('lots').filter((lot) => lot.farmId === item.id).length
+    row.activeCropsCount = new Set(getRecords('cycles')
+      .filter((cycle) => cycle.farmId === item.id && cycle.status === 'En curso')
+      .map((cycle) => cycle.cropId)
+      .filter(Boolean)).size
+  }
+  if (config.value.entity === 'users') {
+    delete row.password
+    const assignedFarmIds = [...new Set([...(Array.isArray(item.farms) ? item.farms : []), item.farmId].filter(Boolean))]
+    row.assignedFarmNames = assignedFarmIds.map((id) => getRecord('farms', id)?.name).filter(Boolean)
+    row.farmsLabel = row.assignedFarmNames.join(', ') || missingData
+    row.activeLabel = item.active === true ? 'Activo' : item.active === false ? 'Inactivo' : missingData
+  }
+  if (config.value.entity === 'notifications') row.status = isNotificationArchived(item) ? 'Archivada' : item.status
+  if (config.value.entity === 'crops') row.emoji = item.emoji || '🌱'
+  if (config.value.entity === 'inputs') row.emoji = item.emoji || '🧪'
   if (config.value.entity === 'farms') {
     const owner = getRecord('users', item.owner)
     row.ownerName = owner?.name ?? item.owner ?? '—'
@@ -128,21 +236,63 @@ function displayRow(item) {
     row.simulatedLabel = 'Simulada'
     row.dateLabel = formatDateTime(item.date)
   }
+  if (config.value.entity === 'cycles') {
+    row.startDateLabel = item.startDate ? formatDateLabel(item.startDate) : missingData
+    row.estimatedEndDateLabel = item.estimatedEndDate ? formatDateLabel(item.estimatedEndDate) : missingData
+    row.progress = item.progress ?? null
+  }
+  if (config.value.entity === 'activities') {
+    const cycle = getRecord('cycles', item.cycleId)
+    row.cycleName = cycle?.name ?? missingData
+    row.cropName = getRecord('crops', cycle?.cropId)?.name ?? missingData
+    row.lotName = getRecord('lots', cycle?.lotId)?.name ?? missingData
+    row.dateLabel = item.date ? formatDateLabel(item.date) : missingData
+    row.responsible = getRecord('users', item.responsible)?.name ?? item.responsible ?? missingData
+    row.status = item.status ?? missingData
+  }
+  if (config.value.entity === 'harvests') {
+    const cycle = getRecord('cycles', item.cycleId)
+    const cycleArea = Number(cycle?.area)
+    const kilograms = getHarvestKilograms(item)
+    row.cycleName = cycle?.name ?? missingData
+    row.cropId = cycle?.cropId
+    row.cropName = getRecord('crops', cycle?.cropId)?.name ?? missingData
+    row.farmName = getRecord('farms', cycle?.farmId)?.name ?? missingData
+    row.lotName = getRecord('lots', cycle?.lotId)?.name ?? missingData
+    row.dateLabel = item.date ? formatDateLabel(item.date) : missingData
+    row.quantity = item.quantity ?? missingData
+    row.unit = item.unit || missingData
+    row.quality = item.quality ?? missingData
+    row.harvestKilograms = kilograms
+    row.cycleArea = Number.isFinite(cycleArea) && cycleArea > 0 ? cycleArea : null
+    row.yieldLabel = kilograms !== null && row.cycleArea
+      ? `${formatMetric(kilograms / row.cycleArea)} kg/ha`
+      : missingData
+  }
+  if (config.value.entity === 'nurseries') {
+    row.cropName = getRecord('crops', item.cropId)?.name ?? missingData
+    row.cycleName = item.cycleId ? getRecord('cycles', item.cycleId)?.name ?? missingData : missingData
+    row.sowingDateLabel = item.sowingDate ? formatDateLabel(item.sowingDate) : missingData
+    row.germinationDateLabel = item.germinationDate ? formatDateLabel(item.germinationDate) : missingData
+    row.transplantDateLabel = item.transplantDate ? formatDateLabel(item.transplantDate) : missingData
+    row.status = item.status ?? missingData
+  }
   return row
 }
 
-const rows = computed(() => allRecords.value
-  .filter((item) => config.value.entity !== 'notifications' || (notificationView.value === 'history' ? Boolean(item.deletedAt) : !item.deletedAt))
-  .filter(isVisible)
-  .map(displayRow))
-const activeNotificationCount = computed(() => config.value.entity === 'notifications'
-  ? allRecords.value.filter((item) => !item.deletedAt && isVisible(item)).length
-  : 0)
+const rows = computed(() => {
+  const visibleRows = allRecords.value
+    .filter((item) => config.value.entity !== 'notifications' || !item.deletedAt)
+    .filter((item) => !localUserManagement.value || item.role !== 'SuperAdmin')
+    .filter(isVisible)
+    .map(displayRow)
+  return config.value.entity === 'notifications'
+    ? visibleRows.sort((left, right) => String(right.date ?? '').localeCompare(String(left.date ?? '')))
+    : visibleRows
+})
 const filteredRows = computed(() => {
-  const query = search.value.trim().toLocaleLowerCase()
   return rows.value.filter((row) => {
     if (activeFarmId.value && row.farmId !== activeFarmId.value) return false
-    if (query && !JSON.stringify(row).toLocaleLowerCase().includes(query)) return false
     if (enumFilter.value && filterField.value && row[filterField.value.key] !== enumFilter.value) return false
     if (config.value.entity !== 'telemetry') return true
     const filters = telemetryFilters.value
@@ -154,17 +304,296 @@ const filteredRows = computed(() => {
       (!filters.to || date <= filters.to)
   })
 })
-const hasFilters = computed(() => Boolean(activeFarmId.value || search.value.trim() || enumFilter.value || Object.values(telemetryFilters.value).some(Boolean)))
+const hasFilters = computed(() => Boolean(activeFarmId.value || enumFilter.value || Object.values(telemetryFilters.value).some(Boolean)))
+const hasExplicitFilters = computed(() => Boolean(enumFilter.value || Object.values(telemetryFilters.value).some(Boolean)))
 const invalidTelemetryRange = computed(() => telemetryFilters.value.from && telemetryFilters.value.to && telemetryFilters.value.from > telemetryFilters.value.to)
-const columns = computed(() => [
-  ...config.value.columns.map(([name, label]) => ({ name, label, field: name, align: 'left', sortable: true })),
-  { name: 'actions', label: 'Acciones', field: 'actions', align: 'right' }
+const userColumns = computed(() => {
+  const definitions = [
+    ['name', 'Usuario'],
+    ['email', 'Correo'],
+    ['role', 'Rol'],
+    ['farmsLabel', 'Predios asignados']
+  ]
+  if (rows.value.some((row) => row.eppStatus !== undefined && row.eppStatus !== null && row.eppStatus !== '')) {
+    definitions.push(['eppStatus', 'Estado EPP'])
+  }
+  definitions.push(['activeLabel', 'Estado de cuenta'])
+  return definitions
+})
+const userKpis = computed(() => [
+  { title: 'Total de usuarios', icon: 'groups', value: rows.value.length, caption: 'Usuarios visibles según el alcance actual.' },
+  { title: 'Administradores', icon: 'admin_panel_settings', value: rows.value.filter((row) => row.role === 'Admin').length },
+  { title: 'Operarios', icon: 'engineering', value: rows.value.filter((row) => row.role === 'Operario').length },
+  { title: 'Cuentas activas', icon: 'check_circle', value: rows.value.filter((row) => row.active === true).length },
+  { title: 'Cuentas inactivas', icon: 'block', value: rows.value.filter((row) => row.active === false).length }
 ])
+const emptyStateInfo = computed(() => ({
+  cycles: { emoji: '🌱', message: 'Todavía no hay ciclos productivos registrados.', subtext: 'Registra un ciclo para hacer seguimiento a la producción.', createLabel: 'Nuevo ciclo productivo' },
+  telemetry: { emoji: '📡', message: 'Todavía no hay lecturas registradas.', subtext: 'Las lecturas simuladas aparecerán aquí cuando estén disponibles.', createLabel: 'Nueva lectura' },
+  notifications: { emoji: '🔔', message: 'No hay notificaciones registradas.', subtext: 'Aquí aparecerá el historial de notificaciones.' },
+  users: { emoji: '👥', message: 'Todavía no hay usuarios registrados.', subtext: 'Crea usuarios para asignarles acceso y predios.', createLabel: 'Nuevo usuario' }
+}[config.value.entity] ?? null))
+const harvestColumns = [
+  ['cropName', 'Cultivo'],
+  ['cycleName', 'Ciclo'],
+  ['farmName', 'Predio'],
+  ['lotName', 'Lote'],
+  ['dateLabel', 'Fecha'],
+  ['quantity', 'Cantidad'],
+  ['unit', 'Unidad'],
+  ['quality', 'Calidad'],
+  ['yieldLabel', 'Rendimiento/ha']
+]
+const nurseryColumns = [
+  ['name', 'Semillero'],
+  ['cropName', 'Cultivo'],
+  ['cycleName', 'Ciclo'],
+  ['sowingDateLabel', 'Fecha de siembra'],
+  ['germinationDateLabel', 'Fecha de germinación'],
+  ['germination', 'Germinación (%)'],
+  ['transplantDateLabel', 'Fecha de trasplante'],
+  ['status', 'Estado']
+]
+const cycleColumns = [
+  ['name', 'Ciclo'],
+  ['farmName', 'Predio'],
+  ['lotName', 'Lote'],
+  ['cropName', 'Cultivo'],
+  ['startDateLabel', 'Fecha de inicio'],
+  ['estimatedEndDateLabel', 'Fecha estimada de finalización'],
+  ['areaLabel', 'Área cultivada (HA)'],
+  ['progress', 'Progreso'],
+  ['status', 'Estado']
+]
+const activityColumns = computed(() => {
+  const definitions = [
+    ['kind', 'Registro'],
+    ['type', 'Tipo'],
+    ['cycleName', 'Ciclo productivo'],
+    ['cropName', 'Cultivo'],
+    ['lotName', 'Lote'],
+    ['dateLabel', 'Fecha'],
+    ['responsible', 'Responsable']
+  ]
+  if (allRecords.value.some((item) => item.kind === 'Incidencia' && item.priority !== undefined && item.priority !== null && item.priority !== '')) {
+    definitions.push(['priority', 'Prioridad'])
+  }
+  definitions.push(['status', 'Estado'])
+  return definitions
+})
+const mobileColumns = computed(() => {
+  if (config.value.entity === 'harvests') return harvestColumns
+  if (config.value.entity === 'nurseries') return nurseryColumns
+  if (config.value.entity === 'cycles') return cycleColumns
+  if (config.value.entity === 'activities') return activityColumns.value
+  if (config.value.entity === 'users') return userColumns.value
+  return config.value.columns
+})
+const columns = computed(() => {
+  let definitions = config.value.columns
+  if (config.value.entity === 'harvests') definitions = harvestColumns
+  else if (config.value.entity === 'nurseries') definitions = nurseryColumns
+  else if (config.value.entity === 'cycles') definitions = cycleColumns
+  else if (config.value.entity === 'activities') definitions = activityColumns.value
+  else if (config.value.entity === 'users') definitions = userColumns.value
+  return [
+    ...definitions.map(([name, label]) => ({ name, label, field: name, align: 'left', sortable: name !== 'farmsLabel' })),
+    { name: 'actions', label: 'Acciones', field: 'actions', align: 'right' }
+  ]
+})
+
+function activityRowClass(row) {
+  return row.kind === 'Incidencia' ? 'activity-incidence-row' : 'activity-labor-row'
+}
 const filterField = computed(() => {
   const fields = config.value.fields
   return fields.find((field) => field.key === 'status' && field.type === 'select') ??
     fields.find((field) => ['category', 'kind', 'role'].includes(field.key) && field.type === 'select') ?? null
 })
+const filterOptions = computed(() => (filterField.value?.options ?? [])
+  .filter((option) => (typeof option === 'string' ? option : option?.value ?? option?.label) !== 'Otro')
+  .map((option) => typeof option === 'string' ? ({ label: option, value: option }) : option))
+const telemetryKpis = computed(() => {
+  const readings = filteredRows.value
+  const latest = mostRecentRecord(readings)
+  const readingKpi = (title, icon, variable) => {
+    const reading = mostRecentRecord(readings.filter((item) =>
+      item.variable === variable &&
+      item.value !== null &&
+      item.value !== undefined &&
+      item.value !== '' &&
+      Number.isFinite(Number(item.value))
+    ))
+    return {
+      title,
+      icon,
+      value: reading ? formatMetric(reading.value) : missingData,
+      unit: reading?.unit ?? '',
+      status: reading ? 'Con lectura' : missingData,
+      caption: reading
+        ? `${reading.unit ? '' : `Unidad: ${missingData} · `}Última lectura: ${formatDateTime(reading.date)}`
+        : missingData
+    }
+  }
+  const latestCaption = latest ? formatDateTime(latest.date) : missingData
+  const metrics = [
+    readingKpi('Humedad del suelo', 'water_drop', 'Humedad del suelo'),
+    readingKpi('Temperatura', 'thermostat', 'Temperatura')
+  ]
+  if (readings.some((item) => item.variable === 'Precipitación')) {
+    metrics.push(readingKpi('Precipitación', 'rainy', 'Precipitación'))
+  }
+  metrics.push(
+    {
+      title: 'Cantidad de lecturas',
+      icon: 'sensors',
+      value: readings.length,
+      unit: 'lecturas',
+      status: readings.length ? 'Con datos' : missingData,
+      caption: `Última lectura: ${latestCaption}`
+    },
+    {
+      title: 'Última actualización',
+      icon: 'update',
+      value: latestCaption,
+      status: latest ? 'Con lectura' : missingData,
+      caption: 'Fecha de la lectura más reciente con los filtros actuales.'
+    }
+  )
+  return metrics
+})
+const telemetryCharts = computed(() => {
+  const groups = new Map()
+  for (const reading of filteredRows.value) {
+    if (reading.value === null || reading.value === undefined || reading.value === '' ||
+        !Number.isFinite(Number(reading.value)) || formatDateLabel(reading.date) === missingData) continue
+    const key = `${reading.variable ?? missingData}\u0000${reading.unit ?? missingData}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(reading)
+  }
+  return [...groups.entries()]
+    .map(([key, readings]) => {
+      if (readings.length < 2) return null
+      const sorted = readings.slice().sort((left, right) => (Date.parse(left.date) || 0) - (Date.parse(right.date) || 0))
+      const values = sorted.map((reading) => Number(reading.value))
+      const minValue = Math.min(...values)
+      const maxValue = Math.max(...values)
+      return {
+        key,
+        title: `Historial de ${sorted[0].variable ?? missingData}`,
+        unit: sorted[0].unit ?? missingData,
+        minValue,
+        maxValue,
+        middleValue: (minValue + maxValue) / 2,
+        readings: sorted.map((reading) => ({
+          value: Number(reading.value),
+          date: formatDateLabel(reading.date),
+          tooltip: `${reading.variable}: ${formatMetric(reading.value)} ${reading.unit ?? ''} · ${formatDateTime(reading.date)}`
+        }))
+      }
+    })
+    .filter(Boolean)
+})
+const telemetryLotsWithoutReadings = computed(() => {
+  const filters = telemetryFilters.value
+  const lots = getRecords('lots')
+    .filter((lot) => !allowedFarmIds.value || allowedFarmIds.value.includes(lot.farmId))
+    .filter((lot) => !filters.farmId || lot.farmId === filters.farmId)
+    .filter((lot) => !filters.lotId || lot.id === filters.lotId)
+  const lotsWithReadings = new Set(filteredRows.value.map((reading) => reading.lotId).filter(Boolean))
+  return lots.filter((lot) => !lotsWithReadings.has(lot.id))
+})
+const harvestKpis = computed(() => {
+  const harvests = filteredRows.value
+  const compatible = harvests.filter((item) => Number.isFinite(item.harvestKilograms))
+  const totalKilograms = compatible.reduce((total, item) => total + item.harvestKilograms, 0)
+  const cycleTotals = new Map()
+  for (const item of compatible) {
+    if (!item.cycleId || !item.cycleArea) continue
+    const cycle = cycleTotals.get(item.cycleId) ?? { kilograms: 0, area: item.cycleArea }
+    cycle.kilograms += item.harvestKilograms
+    cycleTotals.set(item.cycleId, cycle)
+  }
+  const cycleYields = [...cycleTotals.values()].map((cycle) => cycle.kilograms / cycle.area)
+  const averageYield = cycleYields.length
+    ? cycleYields.reduce((total, value) => total + value, 0) / cycleYields.length
+    : null
+  return [
+    {
+      title: 'Producción total',
+      icon: 'agriculture',
+      value: compatible.length ? formatMetric(totalKilograms) : missingData,
+      unit: compatible.length ? 'kg' : '',
+      status: compatible.length ? 'Con datos' : missingData,
+      caption: `${compatible.length} cosechas con unidad convertible.`
+    },
+    {
+      title: 'Cantidad de cosechas',
+      icon: 'inventory_2',
+      value: harvests.length,
+      unit: 'cosechas',
+      status: harvests.length ? 'Con datos' : missingData,
+      caption: 'Registros dentro del alcance visible.'
+    },
+    {
+      title: 'Rendimiento promedio por hectárea',
+      icon: 'monitoring',
+      value: averageYield === null ? missingData : formatMetric(averageYield),
+      unit: averageYield === null ? '' : 'kg/ha',
+      status: averageYield === null ? missingData : 'Con datos',
+      caption: 'Promedio de producción por ciclo con área y unidad compatibles.'
+    }
+  ]
+})
+const harvestProductionCharts = computed(() => {
+  const compatible = filteredRows.value.filter((item) => Number.isFinite(item.harvestKilograms))
+  const monthly = new Map()
+  const byCrop = new Map()
+  for (const item of compatible) {
+    if (/^\d{4}-\d{2}/.test(String(item.date ?? ''))) {
+      const month = String(item.date).slice(0, 7)
+      monthly.set(month, (monthly.get(month) ?? 0) + item.harvestKilograms)
+    }
+    if (item.cropId && item.cropName !== missingData) {
+      const crop = byCrop.get(item.cropId) ?? { label: item.cropName, value: 0 }
+      crop.value += item.harvestKilograms
+      byCrop.set(item.cropId, crop)
+    }
+  }
+  const monthItems = [...monthly.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([month, value]) => ({
+      label: `01/${month.slice(5, 7)}/${month.slice(0, 4)}`,
+      value,
+      tooltip: `${new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric' }).format(new Date(`${month}-01T00:00:00`))}: ${formatMetric(value)} kg`
+    }))
+  const cropItems = [...byCrop.values()]
+    .sort((left, right) => right.value - left.value)
+    .map((item) => ({ ...item, tooltip: `${item.label}: ${formatMetric(item.value)} kg` }))
+  return [
+    { title: 'Producción por mes', xAxis: 'Fecha', items: monthItems },
+    { title: 'Producción por cultivo', xAxis: 'Cultivo', items: cropItems }
+  ]
+    .filter((chart) => chart.items.length)
+    .map((chart) => ({ ...chart, maxValue: Math.max(0, ...chart.items.map((item) => item.value)) }))
+})
+const harvestQualityDistribution = computed(() => {
+  const counts = new Map()
+  for (const item of filteredRows.value) {
+    if (typeof item.quality !== 'string' || !item.quality.trim() || item.quality === missingData) continue
+    counts.set(item.quality, (counts.get(item.quality) ?? 0) + 1)
+  }
+  const items = [...counts.entries()]
+    .map(([label, count]) => ({ label, count }))
+    .sort((left, right) => right.count - left.count)
+  return {
+    maxCount: Math.max(0, ...items.map((item) => item.count)),
+    items
+  }
+})
+const isUnreadNotification = isNotificationUnread
+const isArchivedNotification = isNotificationArchived
+const notificationRowClass = (row) => isUnreadNotification(row) ? 'notification-unread-row' : 'notification-read-row'
 const relationOptions = (field) => {
   let records = getRecords(field.entity)
   const allowed = allowedFarmIds.value
@@ -178,8 +607,22 @@ const relationOptions = (field) => {
 }
 const fieldOptions = (field) => {
   if (field.type === 'ref') return relationOptions(field)
-  if (field.type === 'users') return getResponsibleUsers()
+  if (field.type === 'users') return getResponsibleUsers(field.role, field.valueField)
   if (field.type === 'farms') return getRecords('farms').map((farm) => ({ label: farm.name, value: farm.id }))
+  if (field.type === 'application-products') {
+    const categories = {
+      Plaguicida: ['Agroquímico'],
+      Fertilizante: ['Fertilizante'],
+      Bioinsumo: ['Bioinsumo'],
+      Otro: []
+    }[form.value.applicationType]
+    return getRecords('inputs')
+      .filter((input) => !categories || categories.length === 0 || categories.includes(input.category))
+      .map((input) => ({ label: input.name, value: input.id }))
+  }
+  if (field.key === 'role' && auth.currentUser?.role === 'Admin') {
+    return (field.options || []).filter((role) => role !== 'SuperAdmin').map((role) => ({ label: role, value: role }))
+  }
   return (field.options || []).map((option) => typeof option === 'string' ? ({ label: option, value: option }) : option)
 }
 
@@ -207,33 +650,18 @@ function formatArea(value) {
   return new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 }).format(numericValue(value) || 0)
 }
 
+function telemetryBarHeight(reading, chart) {
+  const range = chart.maxValue - chart.minValue
+  if (!range) return '100%'
+  return `${Math.max(8, ((reading.value - chart.minValue) / range) * 100)}%`
+}
+
+function productionBarHeight(item, chart) {
+  return `${Math.max(8, chart.maxValue ? (item.value / chart.maxValue) * 100 : 0)}%`
+}
+
 function numericValue(value) {
   return Number(String(value ?? '').replace(',', '.'))
-}
-
-function formatDateTime(value) {
-  const date = new Date(value)
-  if (!Number.isFinite(date.getTime())) return value || '—'
-  return new Intl.DateTimeFormat('es-CO', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(date)
-}
-
-function goBack() {
-  const previous = window.history.state?.back
-  if (typeof previous === 'string' && previous.startsWith('/')) router.back()
-  else router.push({ name: 'dashboard' })
-}
-
-function useImageFallback(event, entity) {
-  const placeholder = entity === 'farms' ? farmPlaceholder : lotPlaceholder
-  if (event.target.dataset.fallbackApplied) return
-  event.target.dataset.fallbackApplied = 'true'
-  event.target.src = placeholder
 }
 
 function statusClass(status) {
@@ -242,12 +670,6 @@ function statusClass(status) {
     Inactivo: 'status-inactive',
     'En preparación': 'status-preparing'
   }[status] ?? 'status-neutral'
-}
-
-function openFarmLotsPanel(farm) {
-  farmPanelFarm.value = farm
-  detailDialog.value = false
-  farmLotsPanel.value = true
 }
 
 async function advanceActivityStep() {
@@ -268,13 +690,20 @@ watch(() => form.value.farmId, (farmId) => {
 function openCreate() {
   editing.value = null
   activityStep.value = 1
-  imageFile.value = null
-  imageData.value = ''
-  const initial = Object.fromEntries(config.value.fields.map((field) => [field.key, field.multiple ? [] : '']))
-  if (config.value.entity === 'users') initial.active = true
+  const initial = Object.fromEntries(formFields.value.map((field) => [field.key, field.multiple ? [] : field.default ?? '']))
+  if (config.value.entity === 'users') {
+    initial.active = true
+    if (auth.currentUser?.role === 'Admin') {
+      initial.role = 'Operario'
+      initial.farmId = auth.currentUser.farms?.[0] ?? ''
+      initial.eppStatus = 'Pendiente'
+    }
+  }
   if (config.value.entity === 'activities') {
     initial.kind = 'Labor'
-    initial.responsible = auth.currentUser?.name ?? ''
+    initial.responsible = auth.currentUser?.role === 'Operario'
+      ? auth.currentUser.name
+      : getResponsibleUsers('Operario', 'name')[0]?.value ?? ''
     initial.status = 'Pendiente'
     initial.date = new Date().toISOString().slice(0, 10)
   }
@@ -292,7 +721,10 @@ function openCreate() {
     initial.owner = auth.currentUser?.id ?? ''
     initial.status = 'Activo'
   }
-  if (config.value.entity === 'lots') initial.status = 'Activo'
+  if (config.value.entity === 'lots') {
+    initial.status = 'Activo'
+    initial.responsible = auth.currentUser?.id ?? getResponsibleUsers()[0]?.value ?? ''
+  }
   if (config.value.entity === 'lots' && activeFarmId.value) initial.farmId = activeFarmId.value
   form.value = initial
   dialog.value = true
@@ -302,53 +734,21 @@ function openEdit(row) {
   editing.value = row.id
   activityStep.value = 1
   form.value = JSON.parse(JSON.stringify(getRecord(config.value.entity, row.id)))
-  imageFile.value = null
-  imageData.value = form.value.image ?? ''
-  dialog.value = true
-}
-
-function openDetail(row) {
-  selected.value = row
-  detailDialog.value = true
-}
-
-function loadImage(file) {
-  if (!file) {
-    imageData.value = ''
-    form.value.image = ''
-    return
-  }
-  if (!file.type.startsWith('image/')) {
-    imageFile.value = null
-    $q.notify({ type: 'negative', message: 'Selecciona un archivo de imagen válido.' })
-    return
-  }
-  if (file.size > 2 * 1024 * 1024) {
-    imageFile.value = null
-    $q.notify({ type: 'negative', message: 'La imagen no puede superar 2 MB.' })
-    return
-  }
-  imageLoading.value = true
-  const reader = new FileReader()
-  reader.onload = () => {
-    if (typeof reader.result !== 'string') {
-      imageLoading.value = false
-      $q.notify({ type: 'negative', message: 'No fue posible leer la imagen seleccionada.' })
-      return
+  if (config.value.entity === 'crops' && !form.value.emoji) form.value.emoji = '🌱'
+  if (config.value.entity === 'inputs' && !form.value.emoji) form.value.emoji = '🧪'
+  if (config.value.entity === 'users') {
+    if (auth.currentUser?.role === 'Admin') {
+      form.value.farmId = form.value.farms?.[0] ?? ''
+      form.value.password = ''
+    } else {
+      delete form.value.password
     }
-    imageData.value = reader.result
-    imageLoading.value = false
   }
-  reader.onerror = () => {
-    imageLoading.value = false
-    $q.notify({ type: 'negative', message: 'No fue posible leer la imagen seleccionada.' })
+  if (config.value.entity === 'crops' && !entityConfig.crops.fields.find((field) => field.key === 'category').options.includes(form.value.category)) {
+    form.value.otherCategory = form.value.category
+    form.value.category = 'Otro'
   }
-  reader.readAsDataURL(file)
-}
-
-function rejectImage() {
-  imageLoading.value = false
-  $q.notify({ type: 'negative', message: 'La imagen supera el tamaño máximo de 2 MB.' })
+  dialog.value = true
 }
 
 /**
@@ -356,7 +756,12 @@ function rejectImage() {
  */
 function validateRelations() {
   const value = form.value
-  for (const field of config.value.fields.filter((item) => item.type === 'number' && value[item.key] !== '' && value[item.key] !== null && value[item.key] !== undefined)) {
+  const validationValues = { ...value }
+  for (const field of config.value.fields.filter((item) => item.visibleWhen && !isFieldVisible(item, validationValues))) {
+    validationValues[field.key] = field.multiple ? [] : ''
+  }
+  validateConfiguredFields(visibleFormFields.value, validationValues)
+  for (const field of visibleFormFields.value.filter((item) => item.type === 'number' && value[item.key] !== '' && value[item.key] !== null && value[item.key] !== undefined)) {
     const number = Number(String(value[field.key]).replace(',', '.'))
     if (!Number.isFinite(number)) throw new Error(`${field.label} debe ser un número válido.`)
     if (field.integer && !Number.isInteger(number)) throw new Error(`${field.label} debe ser un número entero.`)
@@ -364,14 +769,18 @@ function validateRelations() {
     if (field.min !== undefined && number < field.min) throw new Error(`${field.label} no puede ser menor que ${field.min}.`)
     if (field.max !== undefined && number > field.max) throw new Error(`${field.label} no puede ser mayor que ${field.max}.`)
   }
-  for (const field of config.value.fields) {
+  for (const field of visibleFormFields.value) {
     const fieldValue = value[field.key]
-    if (field.required && (fieldValue === '' || fieldValue === null || fieldValue === undefined)) throw new Error(`${field.label} es obligatorio.`)
+    if (field.required && (fieldValue === '' || fieldValue === null || fieldValue === undefined || (Array.isArray(fieldValue) && fieldValue.length === 0))) throw new Error(`${field.label} es obligatorio.`)
     if (field.maxLength && fieldValue && String(fieldValue).length > field.maxLength) throw new Error(`${field.label} no puede superar ${field.maxLength} caracteres.`)
-    if (field.textOnly && fieldValue && /\d/.test(fieldValue)) throw new Error(`${field.label} solo puede contener texto.`)
+    if (field.textOnly && fieldValue && !/^[\p{L}\p{M}\s.'-]+$/u.test(fieldValue)) throw new Error(`${field.label} solo puede contener texto.`)
   }
   if (config.value.entity === 'lots' && !getRecord('farms', value.farmId)) throw new Error('Selecciona un predio existente.')
   if (config.value.entity === 'lots') assertFarmAccess(value.farmId)
+  if (config.value.entity === 'lots' && !getRecord('users', value.responsible)?.active) throw new Error('Selecciona un responsable activo para el lote.')
+  if (config.value.entity === 'inputs' && value.crops.some((cropId) => !getRecord('crops', cropId))) {
+    throw new Error('Selecciona cultivos existentes.')
+  }
   if (config.value.entity === 'cycles') {
     const lot = getRecord('lots', value.lotId)
     if (!lot || lot.farmId !== value.farmId) throw new Error('El lote debe pertenecer al predio seleccionado.')
@@ -385,16 +794,30 @@ function validateRelations() {
     const cycle = getRecord('cycles', value.cycleId)
     if (!cycle) throw new Error('Selecciona un ciclo productivo existente.')
     assertFarmAccess(cycle.farmId)
+    for (const inputId of value.inputIds ?? []) {
+      if (!getRecord('inputs', inputId)) throw new Error('Selecciona únicamente insumos existentes.')
+    }
+    const categoryByApplication = {
+      Plaguicida: ['Agroquímico'],
+      Fertilizante: ['Fertilizante'],
+      Bioinsumo: ['Bioinsumo']
+    }
+    for (const application of value.applications ?? []) {
+      const input = getRecord('inputs', application.inputId)
+      if (!input) throw new Error('Selecciona un producto aplicado existente.')
+      const expectedCategories = categoryByApplication[value.applicationType]
+      if (expectedCategories && !expectedCategories.includes(input.category)) {
+        throw new Error(`El producto seleccionado no corresponde al tipo de aplicación "${value.applicationType}".`)
+      }
+    }
   }
   if (config.value.entity === 'nurseries') {
     if (!getRecord('crops', value.cropId)) throw new Error('Selecciona un cultivo existente.')
     if (value.cycleId) assertFarmAccess(getRecord('cycles', value.cycleId)?.farmId)
     if (value.sowingDate > new Date().toISOString().slice(0, 10)) throw new Error('La fecha de siembra no puede estar en el futuro.')
     if (value.cycleId && getRecord('cycles', value.cycleId)?.cropId !== value.cropId) throw new Error('El cultivo debe coincidir con el cultivo del ciclo asociado.')
-    if (value.germinationDate && value.sowingDate && value.germinationDate < value.sowingDate) throw new Error('La germinación no puede ser anterior a la siembra.')
-    if (value.transplantDate && value.sowingDate && value.transplantDate < value.sowingDate) throw new Error('El trasplante no puede ser anterior a la siembra.')
-    if (value.transplantDate && value.germinationDate && value.transplantDate < value.germinationDate) throw new Error('El trasplante no puede ser anterior a la germinación.')
     if (Number(value.germination) < 0 || Number(value.germination) > 100) throw new Error('La germinación debe estar entre 0 y 100 %.')
+    if ((value.quantity || value.unit) && (!Number(value.quantity) || !value.unit)) throw new Error('Indica una cantidad positiva y su unidad para el semillero.')
   }
   if (config.value.entity === 'harvests' && !getRecord('cycles', value.cycleId)) throw new Error('Selecciona un ciclo productivo existente.')
   if (config.value.entity === 'harvests') {
@@ -402,6 +825,10 @@ function validateRelations() {
     assertFarmAccess(cycle.farmId)
     if (Number(value.quantity) <= 0) throw new Error('La cantidad cosechada debe ser mayor que cero.')
     if (value.date < cycle.startDate) throw new Error('La fecha de cosecha no puede ser anterior al inicio del ciclo.')
+    if (value.traceabilityCode && getRecords('harvests').some((item) =>
+      item.id !== editing.value &&
+      String(item.traceabilityCode ?? '').trim().toLowerCase() === String(value.traceabilityCode).trim().toLowerCase()
+    )) throw new Error('Ya existe una cosecha con ese código de trazabilidad.')
   }
   if (config.value.entity === 'telemetry') {
     const lot = getRecord('lots', value.lotId)
@@ -412,6 +839,21 @@ function validateRelations() {
   if (config.value.entity === 'users' && getRecords('users').some((user) => user.email.toLowerCase() === value.email.toLowerCase() && user.id !== editing.value)) throw new Error('Ya existe un usuario con ese correo.')
   if (config.value.entity === 'users' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.email)) throw new Error('Ingresa un correo electrónico válido.')
   if (config.value.entity === 'users' && value.password && String(value.password).trim().length < 6) throw new Error('La contraseña debe tener al menos 6 caracteres.')
+  if (config.value.entity === 'users' && localUserManagement.value) {
+    if (value.role === 'SuperAdmin') throw new Error('El Administrador no puede asignar el rol Superadministrador.')
+    if (editing.value && getRecord('users', editing.value)?.role === 'SuperAdmin') {
+      throw new Error('El Administrador no puede modificar cuentas de Superadministrador.')
+    }
+    if (!getRecord('farms', value.farmId)) throw new Error('Selecciona un predio existente.')
+    assertFarmAccess(value.farmId)
+    if (editing.value === auth.currentUser?.id && value.active === false) {
+      throw new Error('No puedes desactivar tu propia cuenta.')
+    }
+  }
+  if (config.value.entity === 'users' && Array.isArray(value.farms)) {
+    if (new Set(value.farms).size !== value.farms.length) throw new Error('No repitas un predio en las asignaciones del usuario.')
+    if (value.farms.some((farmId) => !getRecord('farms', farmId))) throw new Error('Selecciona únicamente predios existentes.')
+  }
   if (config.value.entity === 'lots') {
     const farm = getRecord('farms', value.farmId)
     const used = getRecords('lots').filter((lot) => lot.farmId === value.farmId && lot.id !== editing.value).reduce((sum, lot) => sum + Number(lot.area || 0), 0)
@@ -439,13 +881,52 @@ async function submitForm() {
   try {
     validateRelations()
     const value = { ...form.value }
-    for (const field of config.value.fields.filter((item) => item.type === 'number')) {
+    for (const field of config.value.fields.filter((item) => item.visibleWhen && !isFieldVisible(item, value))) {
+      value[field.key] = field.multiple ? [] : ''
+    }
+    for (const field of visibleFormFields.value.filter((item) => item.type === 'number')) {
       if (value[field.key] !== '' && value[field.key] !== null && value[field.key] !== undefined) value[field.key] = Number(String(value[field.key]).replace(',', '.'))
     }
-    if (['farms', 'lots'].includes(config.value.entity)) value.image = imageData.value
+    if (Array.isArray(value.applications)) {
+      value.applications = value.applications.map((application) => ({
+        ...application,
+        quantity: application.quantity === '' ? '' : Number(String(application.quantity).replace(',', '.')),
+        dose: application.dose === '' ? '' : Number(String(application.dose).replace(',', '.')),
+        ...(application.preharvestIntervalDays !== '' ? { preharvestIntervalDays: Number(application.preharvestIntervalDays) } : {}),
+        ...(application.reentryIntervalDays !== '' ? { reentryIntervalDays: Number(application.reentryIntervalDays) } : {})
+      }))
+    }
+    if (config.value.entity === 'activities') {
+      value.inputIds = [...new Set([...(value.inputIds ?? []), ...(value.applications ?? []).map((application) => application.inputId).filter(Boolean)])]
+    }
+    if (Array.isArray(value.trainingRecords)) {
+      value.trainingRecords = value.trainingRecords.filter((training) =>
+        [training.title, training.date, training.provider].some((item) => String(item ?? '').trim())
+      )
+    }
     if (config.value.entity === 'telemetry') value.simulated = true
+    if (config.value.entity === 'crops') {
+      if (value.category === 'Otro') value.category = value.otherCategory.trim()
+      delete value.otherCategory
+    }
     let saved
-    if (config.value.entity === 'users') {
+    if (config.value.entity === 'users' && localUserManagement.value) {
+      const existingUser = editing.value ? getRecord('users', editing.value) : null
+      value.farms = editing.value === auth.currentUser?.id
+        ? existingUser?.farms ?? [value.farmId]
+        : [value.farmId]
+      delete value.farmId
+      if (editing.value && !value.password) {
+        if (existingUser?.password) value.password = existingUser.password
+        else delete value.password
+      }
+      saved = saveRecord('users', { ...value, id: editing.value })
+    } else if (config.value.entity === 'users') {
+      if (value.role !== 'Operario') {
+        value.eppStatus = ''
+        value.eppDeliveredAt = ''
+        value.trainingRecords = []
+      }
       saved = editing.value
         ? await updateUser(editing.value, value)
         : await createUser(value)
@@ -456,13 +937,18 @@ async function submitForm() {
     } else {
       saved = saveRecord(config.value.entity, { ...value, id: editing.value })
     }
+    if (config.value.entity === 'farms' && auth.currentUser?.role === 'Admin' && !auth.currentUser.farms?.includes(saved.id)) {
+      auth.currentUser = { ...auth.currentUser, farms: [...(auth.currentUser.farms ?? []), saved.id] }
+      saveRecord('users', auth.currentUser)
+    }
     if (config.value.entity === 'users' && saved.id === auth.currentUser?.id) {
       if (!saved.active) {
         auth.logout()
         await router.replace({ name: 'login' })
         return
       }
-      auth.currentUser = saved
+      auth.currentUser = { ...saved }
+      delete auth.currentUser.password
       if (!canAccess(saved, 'users')) await router.replace({ name: 'dashboard' })
     }
     dialog.value = false
@@ -473,6 +959,11 @@ async function submitForm() {
 }
 
 function confirmDelete(row) {
+  if (config.value.entity === 'notifications' && !canManageNotificationActions(auth.currentUser)) return
+  if (localUserManagement.value && row.role === 'SuperAdmin') {
+    $q.notify({ type: 'negative', message: 'El Administrador no puede eliminar cuentas de Superadministrador.' })
+    return
+  }
   if (config.value.entity === 'users' && row.id === auth.currentUser?.id) {
     $q.notify({ type: 'negative', message: 'No puedes eliminar tu propia cuenta mientras la estás usando.' })
     return
@@ -483,6 +974,39 @@ function confirmDelete(row) {
   deleteReady.value = false
   if (deleteTimer.value) clearTimeout(deleteTimer.value)
   deleteDialog.value = true
+}
+
+function markNotificationReadInList(notification) {
+  if (!canManageNotificationActions(auth.currentUser)) return
+  try {
+    const storedNotification = getRecord('notifications', notification.id)
+    if (!storedNotification) throw new Error('La notificación ya no está disponible.')
+    markNotificationRead(storedNotification)
+  } catch (error) {
+    $q.notify({ type: 'negative', message: error.message })
+  }
+}
+
+function archiveNotificationInList(notification) {
+  if (!canManageNotificationActions(auth.currentUser)) return
+  try {
+    const storedNotification = getRecord('notifications', notification.id)
+    if (!storedNotification) throw new Error('La notificación ya no está disponible.')
+    archiveNotification(storedNotification)
+  } catch (error) {
+    $q.notify({ type: 'negative', message: error.message })
+  }
+}
+
+function unarchiveNotificationInList(notification) {
+  if (!canManageNotificationActions(auth.currentUser)) return
+  try {
+    const storedNotification = getRecord('notifications', notification.id)
+    if (!storedNotification) throw new Error('La notificación ya no está disponible.')
+    unarchiveNotification(storedNotification)
+  } catch (error) {
+    $q.notify({ type: 'negative', message: error.message })
+  }
 }
 
 function continueDelete() {
@@ -515,12 +1039,9 @@ async function deleteRecord() {
   }
   try {
     let message = 'Registro eliminado.'
-    if (config.value.entity === 'notifications') {
-      saveRecord('notifications', { ...pendingDelete.value, deletedAt: new Date().toISOString() })
-      message = 'Notificación movida al Historial.'
-    } else if (config.value.entity === 'users') {
+    if (config.value.entity === 'users') {
       const targetId = pendingDelete.value.id
-      if (/^user-/.test(String(targetId)) && !getAuthToken()) {
+      if (localUserManagement.value || (/^user-/.test(String(targetId)) && !getAuthToken())) {
         removeRecord('users', targetId)
       } else {
         await changeUserStatus(targetId, false)
@@ -539,6 +1060,8 @@ async function deleteRecord() {
         await changeFarmStatus(targetId, false)
         message = 'Predio desactivado correctamente.'
       }
+    } else if (config.value.entity === 'notifications') {
+      deleteNotification(pendingDelete.value)
     } else {
       removeRecord(config.value.entity, pendingDelete.value.id)
     }
@@ -550,46 +1073,23 @@ async function deleteRecord() {
   }
 }
 
-function clearAllNotifications() {
-  try {
-    const active = allRecords.value.filter((item) => !item.deletedAt && isVisible(item))
-    const deletedAt = new Date().toISOString()
-    active.forEach((notification) => saveRecord('notifications', { ...notification, deletedAt }))
-    bulkDeleteDialog.value = false
-    $q.notify({ type: 'positive', message: `${active.length} notificaciones movidas al Historial.` })
-  } catch (error) {
-    $q.notify({ type: 'negative', message: error.message })
-  }
-}
-
 function rowName(row) {
   return row?.name ?? row?.title ?? row?.type ?? row?.email ?? row?.id ?? ''
 }
 
-function markAttended(row) {
-  try {
-    saveRecord('notifications', { ...getRecord('notifications', row.id), status: 'Atendida' })
-    $q.notify({ type: 'positive', message: 'Notificación marcada como atendida.' })
-  } catch (error) {
-    $q.notify({ type: 'negative', message: error.message })
-  }
+function userInitials(name) {
+  return String(name ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toLocaleUpperCase('es-CO')
 }
 
-function rowDetails(row) {
-  if (config.value.entity === 'farms') {
-    return [
-      ['Municipio', row.municipality], ['Departamento', row.department], ['Área total', `${formatArea(row.area)} HA`],
-      ['Responsable', getRecord('users', row.owner)?.name ?? row.owner], ['Estado', row.status],
-      ['Usuarios autorizados', getRecords('users').filter((user) => user.farms?.includes(row.id)).map((user) => user.name).join(', ') || 'Sin asignación']
-    ]
-  }
-  return config.value.fields.filter((field) => field.key !== 'password').map((field) => {
-    let value = row[field.key]
-    if (field.type === 'ref') value = nameOf(field.entity, value)
-    if (field.type === 'ref' && field.multiple) value = (row[field.key] ?? []).map((id) => nameOf(field.entity, id)).join(', ')
-    if (field.key === 'farms') value = (value ?? []).map((id) => nameOf('farms', id)).join(', ')
-    return [field.label, value || '—']
-  })
+function tablePaginationLabel(firstRow, lastRow, totalRows) {
+  return totalRows ? `${firstRow}-${lastRow} de ${totalRows}` : '0 de 0'
 }
 
 onBeforeUnmount(() => {
@@ -602,7 +1102,8 @@ onBeforeUnmount(() => {
 async function syncRemoteUsersIfNeeded() {
   if (!getAuthToken()) return
   const entity = config.value?.entity
-  if (['users', 'farms'].includes(entity) && auth.currentUser?.role !== 'Operario') {
+  if ((entity === 'users' && auth.currentUser?.role === 'SuperAdmin') ||
+      (entity === 'farms' && auth.currentUser?.role !== 'Operario')) {
     try {
       await fetchUsers()
     } catch {
@@ -618,10 +1119,8 @@ async function syncRemoteUsersIfNeeded() {
   }
 }
 
-watch(() => [route.name, route.query.farm, route.query.cycle], () => {
-  search.value = ''
+watch(() => [route.name, route.params.farmId, route.query.cycle], () => {
   enumFilter.value = ''
-  notificationView.value = 'active'
   syncRemoteUsersIfNeeded()
 }, { immediate: true })
 </script>
@@ -633,128 +1132,331 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
         <q-breadcrumbs-el label="Predios" :to="{ name: 'farms' }" />
         <q-breadcrumbs-el :label="activeFarm?.name ?? 'Predio'" />
       </q-breadcrumbs>
-      <q-btn flat no-caps color="primary" icon="arrow_back" label="Volver a Predios" :to="{ name: 'farms' }" />
+      <BackButton label="Volver a Predios" :to="{ name: 'farms' }" />
     </div>
-    <q-btn v-else flat no-caps color="primary" icon="arrow_back" label="Volver" class="back-link" @click="goBack" />
-    <div class="page-intro-row">
-      <div><div class="section-eyebrow">GESTIÓN DE INFORMACIÓN</div><h1>{{ activeFarm ? `Lotes · ${activeFarm.name}` : config.title }}</h1><p>{{ activeFarm ? `Consulta y administra los lotes de este predio (${formatArea(activeFarm.area)} HA en total).` : config.entity === 'notifications' && !canEdit ? 'Consulta las notificaciones y su historial.' : config.description }}</p></div>
-      <q-btn v-if="canEdit" color="primary" unelevated no-caps icon="add" :label="`${config.entity === 'notifications' ? 'Nueva' : 'Nuevo'} ${config.singular}`" @click="openCreate" />
-    </div>
-    <q-tabs v-if="config.entity === 'notifications'" v-model="notificationView" dense align="left" active-color="primary" indicator-color="primary" class="farm-view-tabs" aria-label="Secciones de notificaciones">
-      <q-tab name="active" label="Notificaciones" icon="notifications_active" />
-      <q-tab name="history" label="Historial" icon="history" />
-    </q-tabs>
     <q-card flat bordered class="records-card" :class="{ 'telemetry-records-card': config.entity === 'telemetry' }">
       <div class="records-toolbar">
-        <div class="records-count">
-          <strong>{{ filteredRows.length }}</strong>
-          {{ config.entity === 'lots' ? 'lotes' : 'registros' }}
+        <q-btn v-if="canAdd" color="primary" unelevated rounded no-caps icon="add" class="records-add-button" :label="`Nuevo ${config.singular}`" @click="openCreate" />
+        <div class="records-filter-controls" :class="{ 'records-filter-controls-telemetry': config.entity === 'telemetry' }">
+          <label v-if="filterField && config.entity !== 'telemetry'" class="records-filter-control"><span>Filtra por {{ filterField.label.toLocaleLowerCase() }}.</span><q-select v-model="enumFilter" dense outlined clearable hide-bottom-space emit-value map-options :options="filterOptions" :placeholder="`Todos · ${filterField.label.toLocaleLowerCase()}`" :aria-label="`Filtrar por ${filterField.label.toLocaleLowerCase()}`" /></label>
+          <template v-if="config.entity === 'telemetry'">
+            <label class="records-filter-control"><span>Filtra por predio.</span><q-select v-model="telemetryFilters.farmId" dense outlined clearable hide-bottom-space emit-value map-options :options="telemetryFarmOptions" placeholder="Todos los predios" aria-label="Filtrar por predio" @update:model-value="telemetryFilters.lotId = ''" /></label>
+            <label class="records-filter-control"><span>Filtra por lote.</span><q-select v-model="telemetryFilters.lotId" dense outlined clearable hide-bottom-space emit-value map-options :options="telemetryLotOptions" placeholder="Todos los lotes" aria-label="Filtrar por lote" /></label>
+            <label class="records-filter-control"><span>Filtra por tipo de medición.</span><q-select v-model="telemetryFilters.variable" dense outlined clearable hide-bottom-space emit-value map-options :options="['Humedad del suelo', 'Temperatura', 'Precipitación', 'Humedad ambiental', 'pH'].map(value => ({ label: value, value }))" placeholder="Todas las variables" aria-label="Filtrar por variable" /></label>
+            <label class="records-filter-control"><span>Lecturas desde esta fecha.</span><q-input v-model="telemetryFilters.from" type="date" dense outlined hide-bottom-space placeholder="Fecha inicial" aria-label="Fecha desde" /></label>
+            <label class="records-filter-control"><span>Lecturas hasta esta fecha.</span><q-input v-model="telemetryFilters.to" type="date" dense outlined hide-bottom-space placeholder="Fecha final" aria-label="Fecha hasta" /></label>
+          </template>
         </div>
-        <q-space />
-        <q-btn
-          v-if="canEdit && config.entity === 'notifications' && notificationView === 'active' && activeNotificationCount"
-          flat
-          no-caps
-          color="negative"
-          icon="delete_sweep"
-          label="Borrar todas"
-          @click="bulkDeleteDialog = true"
-        />
-        <q-input v-model="search"
-          dense
-          outlined
-          clearable
-          placeholder="Buscar registros..."
-          class="records-search"
-        ><template #prepend><q-icon name="search" /></template></q-input>
-      </div>
-      <div v-if="filterField && config.entity !== 'telemetry'" class="telemetry-filter-row">
-        <q-select v-model="enumFilter" dense outlined clearable emit-value map-options :options="filterField.options.map(option => typeof option === 'string' ? ({ label: option, value: option }) : option)" :placeholder="`Todos · ${filterField.label.toLocaleLowerCase()}`" :aria-label="`Filtrar por ${filterField.label.toLocaleLowerCase()}`" />
-      </div>
-      <div v-if="config.entity === 'telemetry'" class="telemetry-filter-row">
-        <label class="telemetry-filter-item"><span>Limita las lecturas al predio seleccionado.</span><q-select v-model="telemetryFilters.farmId" dense outlined clearable emit-value map-options :options="telemetryFarmOptions" placeholder="Todos los predios" aria-label="Filtrar por predio" @update:model-value="telemetryFilters.lotId = ''" /></label>
-        <label class="telemetry-filter-item"><span>Limita las lecturas al lote seleccionado.</span><q-select v-model="telemetryFilters.lotId" dense outlined clearable emit-value map-options :options="telemetryLotOptions" placeholder="Todos los lotes" aria-label="Filtrar por lote" /></label>
-        <label class="telemetry-filter-item"><span>Selecciona el tipo de medición.</span><q-select v-model="telemetryFilters.variable" dense outlined clearable emit-value map-options :options="['Humedad del suelo', 'Temperatura', 'Precipitación', 'Humedad ambiental', 'pH'].map(value => ({ label: value, value }))" placeholder="Todas las variables" aria-label="Filtrar por variable" /></label>
-        <label class="telemetry-filter-item"><span>Incluye lecturas registradas desde esta fecha.</span><q-input v-model="telemetryFilters.from" type="date" dense outlined aria-label="Fecha desde" /></label>
-        <label class="telemetry-filter-item"><span>Incluye lecturas registradas hasta esta fecha.</span><q-input v-model="telemetryFilters.to" type="date" dense outlined aria-label="Fecha hasta" /></label>
       </div>
       <q-banner v-if="invalidTelemetryRange" dense class="bg-orange-1 text-orange-10">La fecha inicial no puede ser posterior a la fecha final.</q-banner>
-      <q-table v-if="!useVisualCards" :rows="filteredRows" :columns="columns" row-key="id" flat :rows-per-page-options="[10, 25, 50]" no-data-label="No hay registros para mostrar">
+      <div v-if="config.entity === 'telemetry'" class="simulation-note"><q-icon name="info" /> Todas las lecturas de esta pantalla son simuladas para demostración.</div>
+      <section v-if="config.entity === 'telemetry'" class="records-analytics-section">
+        <div class="records-kpi-grid">
+          <KpiCard v-for="metric in telemetryKpis" :key="metric.title" v-bind="metric" />
+        </div>
+        <div class="records-analytics-grid">
+          <q-card flat bordered class="records-analytics-panel">
+            <q-card-section class="records-analytics-heading">
+              <div><h2>Tendencias por período</h2><p>Se comparan lecturas con la misma unidad y los filtros actuales.</p></div>
+            </q-card-section>
+            <div v-if="telemetryCharts.length" class="records-analytics-chart-list">
+              <div v-for="chart in telemetryCharts" :key="chart.key" class="records-data-chart">
+                <h3>{{ chart.title }}</h3>
+                <div class="production-chart">
+                  <div class="chart-y-axis"><strong>Valor ({{ chart.unit }})</strong><div><span>{{ formatMetric(chart.maxValue) }}</span><span>{{ formatMetric(chart.middleValue) }}</span><span>{{ formatMetric(chart.minValue) }}</span></div></div>
+                  <div>
+                    <div class="chart-plot">
+                      <div class="chart-gridlines"><i></i><i></i><i></i></div>
+                      <div class="harvest-bars">
+                        <div v-for="(reading, index) in chart.readings" :key="`${reading.date}-${index}`" class="harvest-bar-wrap">
+                          <div class="harvest-bar telemetry-chart-bar" :style="{ height: telemetryBarHeight(reading, chart) }" tabindex="0" role="img" :aria-label="reading.tooltip"><q-tooltip>{{ reading.tooltip }}</q-tooltip></div>
+                          <small>{{ reading.date }}</small>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="chart-x-axis">Fecha (DD/MM/YYYY)</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p v-else class="records-analytics-empty">Sin datos registrados suficientes para graficar tendencias en el período filtrado.</p>
+          </q-card>
+          <q-card flat bordered class="records-analytics-panel">
+            <q-card-section class="records-analytics-heading">
+              <div><h2>Lotes sin lecturas</h2><p>Se consideran los filtros de predio, lote, variable y período.</p></div>
+            </q-card-section>
+            <ul v-if="telemetryLotsWithoutReadings.length" class="records-alert-list">
+              <li v-for="lot in telemetryLotsWithoutReadings" :key="lot.id"><strong>{{ lot.name }}</strong><span>{{ getRecord('farms', lot.farmId)?.name ?? missingData }} · Sin lecturas coincidentes con los filtros actuales.</span></li>
+            </ul>
+            <p v-else class="records-analytics-empty">No hay lotes sin lecturas coincidentes con los filtros actuales.</p>
+            <p class="records-analytics-note">No se determinan lecturas desactualizadas ni alertas por rangos: los registros no incluyen intervalos de actualización o umbrales configurados.</p>
+          </q-card>
+        </div>
+      </section>
+      <section v-if="config.entity === 'harvests'" class="records-analytics-section">
+        <div class="records-kpi-grid">
+          <KpiCard v-for="metric in harvestKpis" :key="metric.title" v-bind="metric" />
+        </div>
+        <div class="records-analytics-grid harvest-analytics-grid">
+          <q-card v-for="chart in harvestProductionCharts" :key="chart.title" flat bordered class="records-analytics-panel">
+            <q-card-section class="records-analytics-heading"><div><h2>{{ chart.title }}</h2><p>Producción expresada en kilogramos.</p></div></q-card-section>
+            <div class="production-chart">
+              <div class="chart-y-axis"><strong>Kilos</strong><div><span>{{ formatMetric(chart.maxValue) }}</span><span>{{ formatMetric(chart.maxValue / 2) }}</span><span>0</span></div></div>
+              <div>
+                <div class="chart-plot">
+                  <div class="chart-gridlines"><i></i><i></i><i></i></div>
+                  <div class="harvest-bars">
+                    <div v-for="item in chart.items" :key="item.label" class="harvest-bar-wrap">
+                      <div class="harvest-bar" :style="{ height: productionBarHeight(item, chart) }" tabindex="0" role="img" :aria-label="item.tooltip"><q-tooltip>{{ item.tooltip }}</q-tooltip></div>
+                      <small>{{ item.label }}</small>
+                    </div>
+                  </div>
+                </div>
+                <div class="chart-x-axis">{{ chart.xAxis }}</div>
+              </div>
+            </div>
+          </q-card>
+          <q-card flat bordered class="records-analytics-panel">
+            <q-card-section class="records-analytics-heading"><div><h2>Distribución por calidad</h2><p>Cantidad de cosechas por clasificación.</p></div></q-card-section>
+            <div v-if="harvestQualityDistribution.items.length" class="quality-distribution">
+              <div v-for="item in harvestQualityDistribution.items" :key="item.label" class="quality-distribution-item">
+                <div class="quality-distribution-heading"><StatusBadge :status="item.label" /><strong>{{ item.count }} {{ item.count === 1 ? 'cosecha' : 'cosechas' }}</strong></div>
+                <q-linear-progress rounded size="9px" color="primary" track-color="grey-3" :value="item.count / harvestQualityDistribution.maxCount" :aria-label="`${item.label}: ${item.count} cosechas`" />
+              </div>
+              <div class="quality-chart-axis"><span>Cosechas</span><span>Calidad</span></div>
+            </div>
+            <p v-else class="records-analytics-empty">Sin datos registrados para la calidad de las cosechas.</p>
+          </q-card>
+        </div>
+      </section>
+      <section v-if="config.entity === 'users'" class="records-analytics-section user-kpi-section">
+        <div class="records-kpi-grid">
+          <KpiCard v-for="metric in userKpis" :key="metric.title" v-bind="metric" />
+        </div>
+      </section>
+      <q-table
+        v-if="!useVisualCards"
+        :rows="filteredRows"
+        :columns="columns"
+        row-key="id"
+        flat
+        :rows-per-page-options="[10, 25, 50]"
+        rows-per-page-label="Registros por página"
+        :pagination-label="tablePaginationLabel"
+        no-data-label="No hay registros para mostrar"
+        :row-class="config.entity === 'notifications' ? notificationRowClass : config.entity === 'activities' ? activityRowClass : undefined"
+      >
+        <template #body-cell-name="props">
+          <q-td v-if="config.entity === 'users'" :props="props">
+            <div class="user-name-cell">
+              <q-avatar class="user-avatar" aria-hidden="true">{{ userInitials(props.row.name) || '—' }}</q-avatar>
+              <strong>{{ props.row.name || missingData }}</strong>
+            </div>
+          </q-td>
+          <q-td v-else :props="props">{{ props.value }}</q-td>
+        </template>
+        <template #body-cell-role="props">
+          <q-td :props="props"><StatusBadge :status="props.value" /></q-td>
+        </template>
+        <template #body-cell-farmsLabel="props">
+          <q-td :props="props">
+            <div v-if="config.entity === 'users' && props.row.assignedFarmNames.length" class="user-farm-chips">
+              <q-chip v-for="(farmName, index) in props.row.assignedFarmNames" :key="`${farmName}-${index}`" dense square class="user-farm-chip">{{ farmName }}</q-chip>
+            </div>
+            <span v-else>{{ props.value || missingData }}</span>
+          </q-td>
+        </template>
+        <template #body-cell-eppStatus="props">
+          <q-td :props="props"><StatusBadge :status="props.value" /></q-td>
+        </template>
+        <template #body-cell-activeLabel="props">
+          <q-td :props="props"><StatusBadge :status="props.value" /></q-td>
+        </template>
         <template #body-cell-status="props">
-          <q-td :props="props"><q-badge :class="statusClass(props.value)">{{ props.value }}</q-badge></q-td>
+          <q-td :props="props"><StatusBadge v-if="['nurseries', 'cycles', 'activities'].includes(config.entity)" :status="props.value" /><q-badge v-else :class="statusClass(props.value)">{{ props.value }}</q-badge></q-td>
+        </template>
+        <template #body-cell-quality="props">
+          <q-td :props="props"><StatusBadge :status="props.value" /></q-td>
+        </template>
+        <template #body-cell-germination="props">
+          <q-td :props="props"><ProgressBar :value="props.value" /></q-td>
+        </template>
+        <template #body-cell-progress="props">
+          <q-td :props="props"><ProgressBar :value="props.value" /></q-td>
+        </template>
+        <template #body-cell-kind="props">
+          <q-td :props="props">
+            <div class="activity-kind-cell" :class="props.value === 'Incidencia' ? 'activity-kind-cell--incident' : 'activity-kind-cell--labor'">
+              <q-icon :name="props.value === 'Incidencia' ? 'warning_amber' : 'task_alt'" />
+              <span>{{ props.value }}</span>
+            </div>
+          </q-td>
+        </template>
+        <template #body-cell-priority="props">
+          <q-td :props="props"><StatusBadge :status="props.value" /></q-td>
         </template>
         <template #body-cell-actions="props">
           <q-td :props="props" class="action-cell">
-            <q-btn v-if="config.entity === 'cycles'" flat round dense icon="open_in_new" color="primary" aria-label="Ver seguimiento" :to="{ name: 'cycle-detail', params: { id: props.row.id } }"><q-tooltip>Ver seguimiento</q-tooltip></q-btn>
-            <q-btn v-else-if="config.entity !== 'telemetry'" flat round dense icon="visibility" color="grey-7" aria-label="Ver detalle" @click="openDetail(props.row)"><q-tooltip>Ver detalle</q-tooltip></q-btn>
-            <q-btn v-if="canEdit && config.entity === 'notifications' && props.row.status === 'Pendiente'" flat round dense icon="done" color="positive" aria-label="Marcar atendida" @click="markAttended(props.row)"><q-tooltip>Marcar atendida</q-tooltip></q-btn>
-            <q-btn v-if="canEdit && !props.row.deletedAt" flat round dense icon="edit" color="primary" aria-label="Editar registro" @click="openEdit(props.row)"><q-tooltip>Editar</q-tooltip></q-btn>
-            <q-separator v-if="canEdit && !props.row.deletedAt" vertical class="action-delete-separator" />
-            <q-btn v-if="canEdit && !props.row.deletedAt" flat round dense icon="delete_outline" color="negative" aria-label="Eliminar registro" @click="confirmDelete(props.row)"><q-tooltip>Eliminar</q-tooltip></q-btn>
+            <template v-if="config.entity === 'notifications' && canManageNotificationActions(auth.currentUser)">
+              <q-btn flat round dense icon="done" color="primary" aria-label="Marcar como leída" :disable="!isUnreadNotification(props.row)" @click="markNotificationReadInList(props.row)"><q-tooltip>Marcar como leída</q-tooltip></q-btn>
+              <q-btn v-if="isArchivedNotification(props.row)" flat round dense icon="unarchive" color="primary" aria-label="Desarchivar notificación" @click="unarchiveNotificationInList(props.row)"><q-tooltip>Desarchivar</q-tooltip></q-btn>
+              <q-btn v-else flat round dense icon="archive" color="primary" aria-label="Archivar notificación" @click="archiveNotificationInList(props.row)"><q-tooltip>Archivar</q-tooltip></q-btn>
+              <q-btn flat round dense icon="delete_outline" color="negative" aria-label="Eliminar notificación" @click="confirmDelete(props.row)"><q-tooltip>Eliminar</q-tooltip></q-btn>
+            </template>
+            <template v-else>
+              <q-btn v-if="config.entity === 'cycles'" flat round dense icon="open_in_new" color="primary" aria-label="Ver seguimiento" :to="{ name: 'cycle-detail', params: { id: props.row.id } }"><q-tooltip>Ver seguimiento</q-tooltip></q-btn>
+              <q-btn v-if="canEdit && !props.row.deletedAt" flat round dense icon="edit" color="primary" aria-label="Editar registro" @click="openEdit(props.row)"><q-tooltip>Editar</q-tooltip></q-btn>
+              <q-separator v-if="canEdit && !props.row.deletedAt" vertical class="action-delete-separator" />
+              <q-btn v-if="canEdit && !props.row.deletedAt" flat round dense icon="delete_outline" color="negative" aria-label="Eliminar registro" @click="confirmDelete(props.row)"><q-tooltip>Eliminar</q-tooltip></q-btn>
+            </template>
           </q-td>
         </template>
         <template #no-data>
-          <div class="full-width empty-state table-empty"><q-icon name="inventory_2" /><strong>{{ hasFilters ? 'No encontramos resultados' : 'Todavía no hay registros' }}</strong><span>{{ hasFilters ? 'Prueba con otros términos de búsqueda o filtros.' : 'Cuando agregues información, aparecerá aquí.' }}</span><q-btn v-if="canEdit && !hasFilters" flat no-caps color="primary" :label="`Crear ${config.singular}`" @click="openCreate" /></div>
+          <EmptyState
+            v-if="config.entity === 'nurseries' && !hasFilters"
+            class="full-width"
+            emoji="🌱"
+            message="Todavía no tienes semilleros registrados."
+            subtext="Comienza registrando tu primer semillero para realizar seguimiento a su germinación."
+            :can-create="canAdd"
+            create-label="Nuevo semillero"
+            @create="openCreate"
+          />
+          <EmptyState
+            v-else-if="config.entity === 'harvests' && !hasFilters"
+            class="full-width"
+            emoji="🌾"
+            message="Todavía no tienes cosechas registradas."
+            subtext="Cuando registres cosechas, aquí encontrarás su producción y calidad."
+            :can-create="canAdd"
+            create-label="Nueva cosecha"
+            @create="openCreate"
+          />
+          <EmptyState
+            v-else-if="config.entity === 'activities' && !hasExplicitFilters"
+            class="full-width"
+            emoji="🌿"
+            message="Todavía no hay labores o incidencias registradas."
+            subtext="Cuando registres una actividad, aquí podrás consultar su seguimiento."
+            :can-create="canAdd"
+            create-label="Nuevo registro"
+            @create="openCreate"
+          />
+          <EmptyState
+            v-else-if="emptyStateInfo && !hasFilters"
+            class="full-width"
+            :emoji="emptyStateInfo.emoji"
+            :message="emptyStateInfo.message"
+            :subtext="emptyStateInfo.subtext"
+            :can-create="canAdd"
+            :create-label="emptyStateInfo.createLabel || 'Crear registro'"
+            @create="openCreate"
+          />
+          <div v-else class="full-width empty-state table-empty"><q-icon name="inventory_2" /><strong>{{ hasFilters ? 'No encontramos resultados' : 'Todavía no hay registros' }}</strong><span>{{ hasFilters ? 'Prueba con otros filtros.' : 'Cuando agregues información, aparecerá aquí.' }}</span></div>
         </template>
       </q-table>
       <div v-if="filteredRows.length" class="row q-col-gutter-md record-card-grid" :class="{ 'record-card-grid-always': useVisualCards }" aria-label="Registros">
-        <div v-for="row in filteredRows" :key="row.id" :class="config.entity === 'lots' ? 'col-12 col-sm-6 col-md-4' : 'col-12 col-sm-6 col-md-4 col-lg-3'">
-          <q-card flat bordered class="record-mobile-card"
-          :clickable="config.entity === 'farms'" :aria-label="config.entity === 'farms' ? `Ver detalle del predio ${row.name}` : undefined"
-            :role="config.entity === 'farms' ? 'button' : undefined" :tabindex="config.entity === 'farms' ? 0 : undefined"
-            @click="config.entity === 'farms' && openDetail(row)"
-            @keyup.enter.self="config.entity === 'farms' && openDetail(row)"
-            @keyup.space.self.prevent="config.entity === 'farms' && openDetail(row)"
-            @keydown.space.self.prevent>
+        <div v-for="row in filteredRows" :key="row.id" :class="['lots', 'inputs', 'crops'].includes(config.entity) ? 'col-12 col-md-6 col-lg-4' : 'col-12 col-sm-6 col-md-4 col-lg-3'">
+          <q-card flat bordered class="record-mobile-card" :class="{ 'farm-compact-card': config.entity === 'farms', 'lot-compact-card': config.entity === 'lots' }">
             <template v-if="config.entity === 'farms'">
-              <div class="field-card-visual">
-                <img class="field-card-image" :src="row.image || farmPlaceholder" :alt="`Imagen de ${row.name}`" @error="useImageFallback($event, 'farms')" />
-                <div class="field-card-location"><q-icon name="place" />{{ row.municipality }}, {{ row.department }}</div>
-                <div class="field-card-area"><strong>{{ formatArea(row.area) }}</strong><span>HA</span></div>
-              </div>
-              <q-card-section class="farm-card-summary">
-                <div>
-                  <h2>{{ row.name }}</h2>
-                  <p>{{ row.lotsCount }} {{ row.lotsCount === 1 ? 'lote asociado' : 'lotes asociados' }}</p>
+              <q-card-section class="compact-card-heading">
+                <img class="compact-card-placeholder" :src="farmPlaceholder" alt="" />
+                <div class="compact-card-title">
+                  <h2>{{ row.name || missingData }}</h2>
+                  <p><q-icon name="place" />{{ row.municipality || missingData }}, {{ row.department || missingData }}</p>
                 </div>
-                <q-badge :class="statusClass(row.status)">{{ row.status }}</q-badge>
+                <StatusBadge :status="row.status" />
               </q-card-section>
-              <q-card-actions class="record-mobile-actions">
-                <div class="record-safe-actions">
-                  <q-btn flat round icon="visibility" color="grey-8" aria-label="Ver detalle" @click.stop="openDetail(row)" />
-                  <q-btn v-if="canEdit" flat round icon="edit" color="primary" aria-label="Editar predio" @click.stop="openEdit(row)" />
-                  <q-btn v-if="canEdit" flat round icon="delete_outline" color="negative" aria-label="Eliminar predio" @click.stop="confirmDelete(row)" />
+              <div class="compact-card-metrics farm-compact-metrics">
+                <div><span>Área</span><strong>{{ row.area !== null && row.area !== undefined && row.area !== '' ? `${formatArea(row.area)} HA` : missingData }}</strong></div>
+                <div><span>Lotes asociados</span><strong>{{ row.lotsCount }}</strong></div>
+                <div><span>Cultivos activos</span><strong>{{ row.activeCropsCount }}</strong></div>
+              </div>
+              <q-card-actions class="compact-card-actions">
+                <q-btn flat round dense icon="grid_view" color="primary" aria-label="Gestionar lotes" :to="{ name: 'lots', params: { farmId: row.id } }"><q-tooltip>Gestionar lotes</q-tooltip></q-btn>
+                <q-btn v-if="canEdit" flat round dense icon="edit" color="primary" aria-label="Editar predio" @click="openEdit(row)"><q-tooltip>Editar</q-tooltip></q-btn>
+                <q-btn v-if="canEdit" flat round dense icon="delete_outline" color="negative" aria-label="Eliminar predio" @click="confirmDelete(row)"><q-tooltip>Eliminar</q-tooltip></q-btn>
+              </q-card-actions>
+            </template>
+            <template v-else-if="config.entity === 'lots'">
+              <q-card-section class="compact-card-heading">
+                <img class="compact-card-placeholder" :src="lotPlaceholder" alt="" />
+                <div class="compact-card-title">
+                  <h2>{{ row.name || missingData }}</h2>
+                  <p><q-icon name="landscape" />{{ row.farmName && row.farmName !== '—' ? row.farmName : missingData }}</p>
                 </div>
+                <StatusBadge :status="row.status" />
+              </q-card-section>
+              <div class="compact-card-metrics lot-compact-metrics">
+                <div><span>Área</span><strong>{{ row.area !== null && row.area !== undefined && row.area !== '' ? `${formatArea(row.area)} HA` : missingData }}</strong></div>
+                <div><span>Cultivo</span><strong>{{ row.cropName || missingData }}</strong></div>
+                <div class="compact-metric-wide"><span>Ciclo productivo</span><strong>{{ row.cycleName || missingData }}</strong></div>
+              </div>
+              <q-card-actions class="compact-card-actions">
+                <q-btn v-if="canEdit" flat round dense icon="edit" color="primary" aria-label="Editar lote" @click="openEdit(row)"><q-tooltip>Editar</q-tooltip></q-btn>
+                <q-btn v-if="canEdit" flat round dense icon="delete_outline" color="negative" aria-label="Eliminar lote" @click="confirmDelete(row)"><q-tooltip>Eliminar</q-tooltip></q-btn>
               </q-card-actions>
             </template>
             <template v-else>
-              <div v-if="config.entity === 'lots'" class="field-card-visual">
-                <img class="field-card-image" :src="row.image || lotPlaceholder" :alt="`Imagen de ${row.name}`" @error="useImageFallback($event, 'lots')" />
-                <div class="field-card-area"><strong>{{ formatArea(row.area) }}</strong><span>HA</span></div>
-              </div>
               <q-expansion-item expand-separator class="record-card-expansion" @click.stop>
                 <template #header>
-                  <q-item-section>
-                    <q-item-label class="record-card-title">{{ rowName(row) }}</q-item-label>
-                    <q-item-label caption>{{ config.title }}</q-item-label>
+                  <q-item-section v-if="config.entity === 'users'" avatar>
+                    <q-avatar class="user-avatar" aria-hidden="true">{{ userInitials(row.name) || '—' }}</q-avatar>
                   </q-item-section>
-                  <q-item-section v-if="row.status" side><q-badge :class="statusClass(row.status)">{{ row.status }}</q-badge></q-item-section>
+                  <q-item-section v-else-if="['crops', 'inputs'].includes(config.entity)" avatar>
+                    <q-avatar class="record-card-emoji-avatar" aria-hidden="true">{{ row.emoji }}</q-avatar>
+                  </q-item-section>
+                  <q-item-section v-if="config.entity === 'activities'" avatar>
+                    <q-avatar :class="row.kind === 'Incidencia' ? 'activity-incidence-avatar' : 'brand-green-tint brand-green-text'" :icon="row.kind === 'Incidencia' ? 'warning_amber' : 'task_alt'" />
+                  </q-item-section>
+                  <q-item-section>
+                    <q-item-label class="record-card-title">{{ config.entity === 'users' ? row.name || missingData : config.entity === 'activities' ? row.type || missingData : config.entity === 'harvests' ? row.cropName : rowName(row) }}</q-item-label>
+                    <q-item-label v-if="config.entity === 'crops' && (row.category || row.type)" caption class="crop-card-tags">
+                      <q-chip v-if="row.category" dense square class="crop-card-tag">{{ row.category }}</q-chip>
+                      <q-chip v-if="row.type" dense square class="crop-card-tag">{{ row.type }}</q-chip>
+                    </q-item-label>
+                    <q-item-label v-else caption>{{ config.entity === 'users' ? row.email || missingData : config.entity === 'activities' ? `${row.kind || missingData} · ${row.cycleName} · ${row.responsible} · ${row.dateLabel}` : config.entity === 'harvests' ? `${row.cycleName} · ${row.dateLabel}` : config.entity === 'nurseries' ? `${row.cropName} · ${row.cycleName}` : config.entity === 'inputs' ? `${row.category || missingData} · ${row.stockLabel}` : config.title }}</q-item-label>
+                  </q-item-section>
+                  <q-item-section v-if="config.entity === 'users'" side><div class="user-card-statuses"><StatusBadge :status="row.role" /><StatusBadge :status="row.activeLabel" /></div></q-item-section>
+                  <q-item-section v-if="config.entity === 'nurseries'" side><StatusBadge :status="row.status" /></q-item-section>
+                  <q-item-section v-else-if="config.entity === 'harvests'" side><StatusBadge :status="row.quality" /></q-item-section>
+                  <q-item-section v-else-if="config.entity === 'inputs'" side><StatusBadge :status="row.availabilityStatus" /></q-item-section>
+                  <q-item-section v-else-if="['cycles', 'activities'].includes(config.entity)" side><StatusBadge :status="row.status" /></q-item-section>
+                  <q-item-section v-else-if="row.status" side><q-badge :class="statusClass(row.status)">{{ row.status }}</q-badge></q-item-section>
                 </template>
-                <q-card-section class="record-mobile-card-fields">
-                  <div v-for="[key, label] in config.columns.filter(([key]) => key !== 'name')" :key="key" class="record-mobile-field">
-                    <span>{{ label }}</span><strong>{{ row[key] ?? '—' }}</strong>
+                <q-card-section class="record-mobile-card-fields" :class="{ 'crop-card-fields': config.entity === 'crops' }">
+                  <div
+                    v-for="[key, label] in mobileColumns.filter(([key]) =>
+                      key !== 'name' &&
+                      !(config.entity === 'crops' && key === 'category') &&
+                      !(config.entity === 'users' && ['name', 'email', 'role', 'activeLabel'].includes(key)) &&
+                      !(config.entity === 'activities' && ['kind', 'type', 'status'].includes(key)) &&
+                      !(config.entity === 'nurseries' && key === 'status') &&
+                      !(config.entity === 'harvests' && key === 'quality') &&
+                      !(config.entity === 'cycles' && key === 'status') &&
+                      !(config.entity === 'activities' && key === 'status')
+                    )"
+                    :key="key"
+                    class="record-mobile-field"
+                  >
+                    <span>{{ label }}</span>
+                    <template v-if="config.entity === 'users'">
+                      <div v-if="key === 'farmsLabel'" class="user-farm-chips">
+                        <q-chip v-for="(farmName, index) in row.assignedFarmNames" :key="`${farmName}-${index}`" dense square class="user-farm-chip">{{ farmName }}</q-chip>
+                        <span v-if="!row.assignedFarmNames.length">{{ missingData }}</span>
+                      </div>
+                      <StatusBadge v-else-if="key === 'eppStatus'" :status="row.eppStatus" />
+                      <strong v-else>{{ row[key] ?? missingData }}</strong>
+                    </template>
+                    <ProgressBar v-else-if="config.entity === 'nurseries' && key === 'germination'" :value="row.germination" />
+                    <ProgressBar v-else-if="config.entity === 'cycles' && key === 'progress'" :value="row.progress" />
+                    <StatusBadge v-else-if="config.entity === 'activities' && key === 'priority'" :status="row.priority" />
+                    <strong v-else>{{ row[key] ?? missingData }}</strong>
                   </div>
-                </q-card-section>
-                <q-card-section v-if="config.entity === 'lots'" class="lot-condition-grid">
-                  <div><q-icon name="water_drop" /><span>Humedad</span><strong>{{ row.latestHumidity !== undefined ? `${row.latestHumidity} %` : 'Sin lectura' }}</strong></div>
-                  <div><q-icon name="health_and_safety" /><span>Sanidad</span><strong>Sin registro</strong></div>
-                  <div><q-icon name="schedule" /><span>Tiempo al corte</span><strong>Sin registro</strong></div>
                 </q-card-section>
                 <q-card-actions class="record-mobile-actions">
                   <div class="record-safe-actions">
-                    <q-btn v-if="config.entity === 'cycles'" flat round icon="open_in_new" color="primary" aria-label="Ver detalle" :to="{ name: 'cycle-detail', params: { id: row.id } }" />
-                    <q-btn v-else-if="!['lots', 'crops'].includes(config.entity)" flat round icon="visibility" color="grey-8" aria-label="Ver detalle" @click="openDetail(row)" />
-                    <q-btn v-if="canEdit && config.entity === 'notifications' && !row.deletedAt && row.status === 'Pendiente'" flat round icon="done" color="positive" aria-label="Marcar atendida" @click="markAttended(row)" />
+                    <q-btn v-if="config.entity === 'cycles'" flat round icon="open_in_new" color="primary" aria-label="Ver seguimiento" :to="{ name: 'cycle-detail', params: { id: row.id } }" />
                     <q-btn v-if="canEdit && !row.deletedAt" flat round icon="edit" color="primary" aria-label="Editar registro" @click="openEdit(row)" />
                   </div>
                   <q-separator v-if="canEdit && !row.deletedAt" vertical />
@@ -766,65 +1468,142 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
         </div>
       </div>
       <div v-else class="record-card-grid record-mobile-empty" :class="{ 'record-card-grid-always': useVisualCards }">
-        <div class="empty-state">
+        <EmptyState
+          v-if="config.entity === 'farms' && !hasExplicitFilters"
+          class="full-width"
+          emoji="🌱"
+          message="Todavía no tienes predios registrados."
+          subtext="Registra un predio para comenzar a gestionar sus lotes y cultivos."
+          :can-create="canAdd"
+          create-label="Nuevo predio"
+          @create="openCreate"
+        />
+        <EmptyState
+          v-else-if="config.entity === 'lots' && !hasExplicitFilters"
+          class="full-width"
+          emoji="🌾"
+          :message="activeFarm ? `Todavía no hay lotes registrados para ${activeFarm.name}.` : 'Todavía no tienes lotes registrados.'"
+          subtext="Registra un lote para organizar la producción de este predio."
+          :can-create="canAdd"
+          create-label="Nuevo lote"
+          @create="openCreate"
+        />
+        <EmptyState
+          v-else-if="config.entity === 'inputs' && !hasExplicitFilters"
+          class="full-width"
+          emoji="🧪"
+          message="Todavía no tienes insumos registrados."
+          subtext="Registra insumos para consultar su disponibilidad y cultivos asociados."
+          :can-create="canAdd"
+          create-label="Nuevo insumo"
+          @create="openCreate"
+        />
+        <EmptyState
+          v-else-if="config.entity === 'crops' && !hasExplicitFilters"
+          class="full-width"
+          emoji="🌱"
+          message="Todavía no tienes cultivos registrados."
+          subtext="Registra un cultivo para organizar su variedad, etapas e insumos asociados."
+          :can-create="canAdd"
+          create-label="Nuevo cultivo"
+          @create="openCreate"
+        />
+        <EmptyState
+          v-if="config.entity === 'nurseries' && !hasFilters"
+          class="full-width"
+          emoji="🌱"
+          message="Todavía no tienes semilleros registrados."
+          subtext="Comienza registrando tu primer semillero para realizar seguimiento a su germinación."
+          :can-create="canAdd"
+          create-label="Nuevo semillero"
+          @create="openCreate"
+        />
+        <EmptyState
+          v-else-if="config.entity === 'harvests' && !hasFilters"
+          class="full-width"
+          emoji="🌾"
+          message="Todavía no tienes cosechas registradas."
+          subtext="Cuando registres cosechas, aquí encontrarás su producción y calidad."
+          :can-create="canAdd"
+          create-label="Nueva cosecha"
+          @create="openCreate"
+        />
+        <EmptyState
+          v-else-if="config.entity === 'activities' && !hasExplicitFilters"
+          class="full-width"
+          emoji="🌿"
+          message="Todavía no hay labores o incidencias registradas."
+          subtext="Cuando registres una actividad, aquí podrás consultar su seguimiento."
+          :can-create="canAdd"
+          create-label="Nuevo registro"
+          @create="openCreate"
+        />
+        <EmptyState
+          v-else-if="emptyStateInfo && !hasFilters"
+          class="full-width"
+          :emoji="emptyStateInfo.emoji"
+          :message="emptyStateInfo.message"
+          :subtext="emptyStateInfo.subtext"
+          :can-create="canAdd"
+          :create-label="emptyStateInfo.createLabel || 'Crear registro'"
+          @create="openCreate"
+        />
+        <div v-else class="empty-state">
           <q-icon name="inventory_2" />
           <strong>{{ hasFilters ? 'No encontramos resultados' : 'Todavía no hay registros' }}</strong>
-          <span>{{ activeFarm ? `Este predio aún no tiene lotes registrados.` : hasFilters ? 'Prueba con otros términos de búsqueda o filtros.' : 'Cuando agregues información, aparecerá aquí.' }}</span>
-          <q-btn v-if="canEdit && !search && !enumFilter" flat no-caps color="primary" :label="`Registrar ${config.singular}`" @click="openCreate" />
+          <span>{{ activeFarm ? `Este predio aún no tiene lotes registrados.` : hasFilters ? 'Prueba con otros filtros.' : 'Cuando agregues información, aparecerá aquí.' }}</span>
         </div>
       </div>
-      <div v-if="config.entity === 'telemetry'" class="simulation-note"><q-icon name="info" /> Todas las lecturas de esta pantalla son simuladas para demostración.</div>
-      <div v-if="config.entity === 'users'" class="simulation-note"><q-icon name="info" /> Los cambios de usuarios se sincronizan con el servidor. Si no defines una contraseña al crear la cuenta, se asignará <strong>Agro2026!</strong> por defecto.</div>
+      <div v-if="config.entity === 'users'" class="simulation-note"><q-icon name="info" /> <span v-if="localUserManagement">Las cuentas se guardan en este navegador; la contraseña se almacena localmente para esta demostración.</span><span v-else>Los cambios de usuarios se sincronizan con el servidor. Si no defines una contraseña al crear la cuenta, se asignará <strong>Agro2026!</strong> por defecto.</span></div>
     </q-card>
 
     <q-dialog v-model="dialog">
       <q-card class="record-dialog">
         <q-card-section class="dialog-heading"><div><h2>{{ editing ? 'Editar' : 'Nuevo' }} {{ config.singular }}</h2><p>Completa la información del registro.</p></div><q-btn v-close-popup flat round dense icon="close" /></q-card-section>
         <q-separator />
-        <q-card-section class="dialog-body">
-          <q-form ref="formRef" class="record-form" greedy novalidate @submit.prevent="submitForm">
+        <q-form ref="formRef" class="record-dialog-form" greedy novalidate @submit.prevent="submitForm">
+          <q-card-section class="dialog-body">
             <q-stepper v-if="config.entity === 'activities'" v-model="activityStep" flat animated :header-nav="false" class="activity-stepper">
               <q-step v-for="step in activityFieldGroups" :key="step.name" :name="step.name" :title="step.title" :caption="step.caption" :icon="step.name === 1 ? 'landscape' : step.name === 2 ? 'event_note' : 'person'">
                 <div class="activity-step-fields">
                   <div v-for="field in activityFieldsForStep(step.name)" :key="field.key" class="form-field">
-                    <label :for="`field-${field.key}`">{{ field.label }}<span v-if="field.required"> *</span></label>
-                    <RecordFormField v-model="form[field.key]" :field="field" :options="fieldOptions(field)" :disabled="field.key === 'lotId' && !form.farmId" />
+                    <label :for="`field-${field.key}`">{{ field.label }}<span v-if="field.required"> *</span><span v-else class="optional-label">Opcional</span></label>
+                    <RecordFormField v-model="form[field.key]" :field="field" :options="fieldOptions(field)" :extra-rules="field.key === 'email' ? [userEmailRule] : []" :disabled="field.key === 'lotId' && !form.farmId" />
                   </div>
-                </div>
-                <div class="dialog-actions activity-step-actions">
-                  <q-btn v-if="step.name > 1" flat no-caps label="Anterior" @click="activityStep -= 1" />
-                  <q-space />
-                  <q-btn v-if="step.name < activityFieldGroups.length" unelevated color="primary" no-caps label="Continuar" icon-right="arrow_forward" @click="advanceActivityStep" />
-                  <q-btn v-else type="submit" color="primary" unelevated no-caps label="Guardar registro" />
                 </div>
               </q-step>
             </q-stepper>
             <template v-else>
-              <div v-for="field in config.fields.filter(f => !(editing && config.entity === 'users' && f.key === 'password'))" :key="field.key" class="form-field">
-                <label :for="`field-${field.key}`">{{ field.label }}<span v-if="field.required"> *</span></label>
-                <RecordFormField v-model="form[field.key]" :field="field" :options="fieldOptions(field)" :disabled="field.key === 'lotId' && !form.farmId" />
-                <div v-if="field.key === 'area' && lotAreaGuidance" class="area-guidance" :class="{ 'area-guidance-over': lotAreaGuidance.exceedsAvailable }">
-                  <div class="area-guidance-heading">
-                    <span>{{ formatArea(form.area || 0) }} HA del predio</span>
-                    <strong>{{ formatArea(lotAreaGuidance.percentage) }}%</strong>
+              <div class="record-form-sections">
+                <section v-for="section in formSections" :key="section.title" class="record-form-section">
+                  <div class="record-form-section-heading"><h3>{{ section.title }}</h3></div>
+                  <div class="record-form">
+                    <div v-for="field in section.fields" :key="field.key" class="form-field">
+                      <label :for="`field-${field.key}`">{{ field.label }}<span v-if="field.required"> *</span><span v-else class="optional-label">Opcional</span></label>
+                      <RecordFormField v-model="form[field.key]" :field="field" :options="fieldOptions(field)" :extra-rules="field.key === 'email' ? [userEmailRule] : []" :disabled="(field.key === 'lotId' && !form.farmId) || (field.key === 'farmId' && localUserManagement && editing === auth.currentUser?.id)" />
+                      <div v-if="field.key === 'area' && lotAreaGuidance" class="area-guidance" :class="{ 'area-guidance-over': lotAreaGuidance.exceedsAvailable }">
+                        <div class="area-guidance-heading">
+                          <span>{{ formatArea(form.area || 0) }} HA del predio</span>
+                          <strong>{{ formatArea(lotAreaGuidance.percentage) }}%</strong>
+                        </div>
+                        <q-linear-progress rounded size="8px" :value="lotAreaGuidance.progress" color="primary" track-color="white" />
+                        <span>Disponible para nuevos lotes: {{ formatArea(lotAreaGuidance.availableArea) }} HA</span>
+                        <span v-if="lotAreaGuidance.exceedsAvailable" class="area-guidance-warning">El área ingresada supera el área disponible de este predio.</span>
+                      </div>
+                    </div>
                   </div>
-                  <q-linear-progress rounded size="8px" :value="lotAreaGuidance.progress" color="primary" track-color="green-1" />
-                  <span>Disponible para nuevos lotes: {{ formatArea(lotAreaGuidance.availableArea) }} HA</span>
-                  <span v-if="lotAreaGuidance.exceedsAvailable" class="area-guidance-warning">El área ingresada supera el área disponible de este predio.</span>
-                </div>
+                </section>
               </div>
-              <div v-if="['farms', 'lots'].includes(config.entity)" class="form-field image-upload-field">
-                <label for="record-image">Imagen (opcional)</label>
-                <q-file id="record-image" v-model="imageFile" outlined dense clearable accept="image/*" max-file-size="2097152" label="Selecciona una imagen" @update:model-value="loadImage" @rejected="rejectImage">
-                  <template #prepend><q-icon name="image" /></template>
-                </q-file>
-                <small class="image-upload-help">Máximo 2 MB. Si no subes una imagen, se mostrará la imagen predeterminada.</small>
-                <img class="form-image-preview" :src="imageData || (config.entity === 'farms' ? farmPlaceholder : lotPlaceholder)" alt="Vista previa de la imagen" @error="useImageFallback($event, config.entity)" />
-              </div>
-              <div class="dialog-actions"><q-btn v-close-popup flat no-caps label="Cancelar" /><q-btn type="submit" color="primary" unelevated no-caps :disable="imageLoading" label="Guardar registro" /></div>
             </template>
-          </q-form>
-        </q-card-section>
+          </q-card-section>
+          <div class="dialog-actions">
+            <q-btn v-if="config.entity === 'activities' && activityStep > 1" flat no-caps label="Anterior" @click="activityStep -= 1" />
+            <q-btn v-close-popup flat no-caps label="Cancelar" />
+            <q-space />
+            <q-btn v-if="config.entity === 'activities' && activityStep < activityFieldGroups.length" unelevated color="primary" no-caps label="Continuar" icon-right="arrow_forward" @click="advanceActivityStep" />
+            <q-btn v-else type="submit" color="primary" unelevated no-caps label="Guardar registro" />
+          </div>
+        </q-form>
       </q-card>
     </q-dialog>
 
@@ -845,7 +1624,7 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
         <q-card-section v-else class="delete-confirmation-content">
           <strong>{{ rowName(pendingDelete) }}</strong>
           <p v-if="['farms', 'lots'].includes(config.entity)">Confirma que deseas eliminar este {{ config.singular }} escribiendo su nombre.</p>
-          <q-input v-model="deleteConfirmationText" outlined autofocus :placeholder="rowName(pendingDelete)" aria-label="Escribe el nombre del registro para confirmar" />
+          <q-input v-model="deleteConfirmationText" outlined autofocus :maxlength="rowName(pendingDelete).length" :placeholder="`Escribe ${rowName(pendingDelete)} para confirmar`" aria-label="Escribe el nombre del registro para confirmar" />
           <small v-if="['farms', 'lots'].includes(config.entity) && !deleteReady">El botón se habilitará en un momento.</small>
         </q-card-section>
         <q-card-actions align="right" class="delete-dialog-actions">
@@ -856,65 +1635,5 @@ watch(() => [route.name, route.query.farm, route.query.cycle], () => {
       </q-card>
     </q-dialog>
 
-    <q-dialog v-model="bulkDeleteDialog">
-      <q-card class="notification-confirm-dialog">
-        <q-card-section>
-          <div class="section-eyebrow">CONFIRMAR ACCIÓN</div>
-          <h2>Borrar todas las notificaciones</h2>
-          <p>{{ activeNotificationCount }} notificaciones se moverán al Historial. No se eliminarán definitivamente.</p>
-        </q-card-section>
-        <q-card-actions align="right">
-          <q-btn flat no-caps label="Cancelar" @click="bulkDeleteDialog = false" />
-          <q-btn unelevated no-caps color="negative" label="Borrar todas" @click="clearAllNotifications" />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
-
-    <q-dialog v-model="detailDialog">
-      <q-card class="record-dialog detail-dialog">
-        <q-card-section class="dialog-heading"><div><div class="section-eyebrow">DETALLE</div><h2>{{ selected?.name || selected?.title || selected?.type || config.singular }}</h2></div><q-btn v-close-popup flat round dense icon="close" /></q-card-section>
-        <q-separator />
-        <template v-if="['farms', 'lots'].includes(config.entity)">
-          <img class="detail-cover-image" :src="selected?.image || (config.entity === 'farms' ? farmPlaceholder : lotPlaceholder)" :alt="`Imagen de ${selected?.name}`" @error="useImageFallback($event, config.entity)" />
-          <q-card-section class="detail-content">
-            <div class="detail-status-row">
-              <q-badge :class="statusClass(selected?.status)">{{ selected?.status }}</q-badge>
-              <span v-if="config.entity === 'lots'">{{ nameOf('farms', selected?.farmId) }}</span>
-            </div>
-            <div class="detail-info-grid">
-              <div v-for="[label, value] in rowDetails(selected || {})" :key="label">
-                <span>{{ label }}</span><strong>{{ value || '—' }}</strong>
-              </div>
-            </div>
-            <q-btn v-if="config.entity === 'farms'" unelevated no-caps color="primary" icon="grid_view" label="Lotes asociados" @click="openFarmLotsPanel(selected)" />
-          </q-card-section>
-        </template>
-        <q-list v-else separator><q-item v-for="[label, value] in rowDetails(selected || {})" :key="label"><q-item-section><q-item-label caption>{{ label }}</q-item-label><q-item-label>{{ value }}</q-item-label></q-item-section></q-item></q-list>
-      </q-card>
-    </q-dialog>
-
-    <q-dialog v-model="farmLotsPanel" position="right" full-height>
-      <q-card class="farm-lots-panel">
-        <q-card-section class="dialog-heading">
-          <div><div class="section-eyebrow">LOTES DEL PREDIO</div><h2>{{ farmPanelFarm?.name }}</h2><p>{{ farmPanelLots.length }} lotes asociados</p></div>
-          <q-btn flat round dense icon="close" aria-label="Cerrar panel" @click="farmLotsPanel = false" />
-        </q-card-section>
-        <q-separator />
-        <q-scroll-area class="farm-lots-panel-scroll">
-          <q-card v-for="lot in farmPanelLots" :key="lot.id" flat bordered class="farm-lot-panel-card">
-            <img :src="lot.image || lotPlaceholder" :alt="`Imagen de ${lot.name}`" @error="useImageFallback($event, 'lots')" />
-            <div class="farm-lot-panel-copy">
-              <div><strong>{{ lot.name }}</strong><q-badge :class="statusClass(lot.status)">{{ lot.status }}</q-badge></div>
-              <span>{{ formatArea(lot.area) }} HA · {{ lot.soilType }}</span>
-            </div>
-          </q-card>
-          <div v-if="!farmPanelLots.length" class="empty-state"><q-icon name="agriculture" /><strong>Sin lotes registrados</strong><span>Este predio todavía no tiene lotes asociados.</span></div>
-        </q-scroll-area>
-        <q-card-actions align="right">
-          <q-btn flat no-caps label="Cerrar" @click="farmLotsPanel = false" />
-          <q-btn unelevated no-caps color="primary" label="Gestionar lotes" :to="{ name: 'lots', query: { farm: farmPanelFarm?.id } }" @click="farmLotsPanel = false" />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
   </q-page>
 </template>

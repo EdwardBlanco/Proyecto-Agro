@@ -12,18 +12,20 @@ document.title = import.meta.env.VITE_APP_NAME || 'SENAgro'
 
 initializeStorage()
 
+const pinia = createPinia()
+
 createApp(App)
-  .use(createPinia())
+  .use(pinia)
   .use(router)
   .use(Quasar, {
     plugins: { Notify, Dialog, Loading },
     config: {
       brand: {
-        primary: '#2d6a4f',
-        secondary: '#1b4332',
-        accent: '#52b788',
-        dark: '#212529',
-        positive: '#2d6a4f',
+        primary: '#2E7D32',
+        secondary: '#185B2B',
+        accent: '#66BB6A',
+        dark: '#123D29',
+        positive: '#2E7D32',
         negative: '#b42318',
         info: '#245b73',
         warning: '#8a5700'

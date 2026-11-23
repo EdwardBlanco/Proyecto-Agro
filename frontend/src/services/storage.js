@@ -12,19 +12,19 @@ const revision = ref(0)
 // Datos iniciales de demostración cargados la primera vez que se abre la aplicación
 const demoData = {
   users: [
-    { id: 'user-admin', name: 'Laura Mendoza', email: 'admin@agrogestion.demo', role: 'Admin', farms: ['farm-1', 'farm-2'], active: true },
-    { id: 'user-supervisor', name: 'Carlos Ríos', email: 'superadmin@agrogestion.demo', role: 'SuperAdmin', farms: ['farm-1', 'farm-2'], active: true },
-    { id: 'user-agronomist', name: 'María Torres', email: 'maria@agrogestion.demo', role: 'Operario', farms: ['farm-1'], active: true },
-    { id: 'user-operator', name: 'José Pérez', email: 'operario@agrogestion.demo', role: 'Operario', farms: ['farm-1'], active: true }
+    { id: 'user-admin', name: 'Laura Mendoza', email: 'admin@agrogestion.demo', role: 'ADMIN_PRODUCTOR', farms: ['farm-1', 'farm-2'], active: true },
+    { id: 'user-supervisor', name: 'Carlos Ríos', email: 'agronomo@agrogestion.demo', role: 'TECNICO_AGRONOMO', farms: ['farm-1', 'farm-2'], active: true },
+    { id: 'user-agronomist', name: 'María Torres', email: 'maria@agrogestion.demo', role: 'TECNICO_AGRONOMO', farms: ['farm-1'], active: true },
+    { id: 'user-operator', name: 'José Pérez', email: 'operario@agrogestion.demo', role: 'OPERARIO_CAMPO', farms: ['farm-1'], active: true }
   ],
   farms: [
-    { id: 'farm-1', name: 'El Robledal', municipality: 'Rionegro', department: 'Antioquia', area: 24, owner: 'user-admin', status: 'Activo' },
-    { id: 'farm-2', name: 'La Esperanza', municipality: 'La Ceja', department: 'Antioquia', area: 18, owner: 'user-admin', status: 'Activo' }
+    { id: 'farm-1', name: 'El Robledal', municipality: 'San Gil', department: 'Santander', area: 24, owner: 'user-admin', status: 'Activo' },
+    { id: 'farm-2', name: 'La Esperanza', municipality: 'Barichara', department: 'Santander', area: 18, owner: 'user-admin', status: 'Activo' }
   ],
   lots: [
-    { id: 'lot-1', name: 'Lote Norte', farmId: 'farm-1', area: 8, soilType: 'Franco', status: 'Activo' },
-    { id: 'lot-2', name: 'Lote La Honda', farmId: 'farm-1', area: 6, soilType: 'Franco arcilloso', status: 'Activo' },
-    { id: 'lot-3', name: 'Lote 3', farmId: 'farm-2', area: 7, soilType: 'Franco arenoso', status: 'Activo' }
+    { id: 'lot-1', name: 'Lote Norte', farmId: 'farm-1', area: 8, soilType: 'Franco', responsible: 'user-agronomist', status: 'Activo' },
+    { id: 'lot-2', name: 'Lote La Honda', farmId: 'farm-1', area: 6, soilType: 'Franco arcilloso', responsible: 'user-operator', status: 'Activo' },
+    { id: 'lot-3', name: 'Lote 3', farmId: 'farm-2', area: 7, soilType: 'Franco arenoso', responsible: 'user-admin', status: 'Activo' }
   ],
   crops: [
     { id: 'crop-1', name: 'Aguacate Hass', variety: 'Hass', category: 'Frutal', stages: 'Floración, Cuajado, Desarrollo, Cosecha', inputs: ['input-1', 'input-2'] },
@@ -32,9 +32,9 @@ const demoData = {
     { id: 'crop-3', name: 'Café', variety: 'Castillo', category: 'Permanente', stages: 'Crecimiento, Floración, Maduración', inputs: ['input-1'] }
   ],
   inputs: [
-    { id: 'input-1', name: 'Compost orgánico', category: 'Fertilizante', unit: 'kg', stock: 120, crops: 'Aguacate Hass, Tomate, Café' },
-    { id: 'input-2', name: 'Cal agrícola', category: 'Correctivo', unit: 'kg', stock: 80, crops: 'Aguacate Hass' },
-    { id: 'input-3', name: 'NPK 15-15-15', category: 'Fertilizante', unit: 'kg', stock: 45, crops: 'Tomate' }
+    { id: 'input-1', name: 'Compost orgánico', category: 'Fertilizante', unit: 'kg', stock: 120, crops: ['crop-1', 'crop-2', 'crop-3'] },
+    { id: 'input-2', name: 'Cal agrícola', category: 'Correctivo', unit: 'kg', stock: 80, crops: ['crop-1'] },
+    { id: 'input-3', name: 'NPK 15-15-15', category: 'Fertilizante', unit: 'kg', stock: 45, crops: ['crop-2'] }
   ],
   cycles: [
     { id: 'cycle-1', name: 'Aguacate · Ciclo 2026', farmId: 'farm-1', lotId: 'lot-1', cropId: 'crop-1', startDate: '2026-02-01', area: 5, target: 12000, status: 'En curso' },
@@ -89,6 +89,15 @@ function readData() {
     parsed.lots = parsed.lots.map((lot) => ({
       ...lot,
       status: lot.status === 'En descanso' ? 'En preparación' : allowedStatuses.includes(lot.status) ? lot.status : 'Inactivo'
+    }))
+    parsed.inputs = parsed.inputs.map((input) => ({
+      ...input,
+      crops: Array.isArray(input.crops)
+        ? input.crops
+        : String(input.crops ?? '')
+          .split(',')
+          .map((name) => parsed.crops.find((crop) => crop.name === name.trim())?.id)
+          .filter(Boolean)
     }))
     return parsed
   } catch (error) {
@@ -168,7 +177,7 @@ export function removeRecord(entity, id) {
   const blockers = {
     farms: [['lots', 'farmId'], ['cycles', 'farmId'], ['telemetry', 'farmId']],
     lots: [['cycles', 'lotId'], ['telemetry', 'lotId'], ['notifications', 'lotId']],
-    crops: [['cycles', 'cropId'], ['nurseries', 'cropId']],
+    crops: [['cycles', 'cropId'], ['nurseries', 'cropId'], ['inputs', 'crops']],
     cycles: [['activities', 'cycleId'], ['nurseries', 'cycleId'], ['harvests', 'cycleId']],
     inputs: [['crops', 'inputs']]
   }
@@ -190,7 +199,7 @@ export function removeRecord(entity, id) {
 export function getDemoAccounts() {
   return [
     { username: 'admin', email: 'admin@agrogestion.demo', password: 'Agro2026!', userId: 'user-admin' },
-    { username: 'superadmin', email: 'superadmin@agrogestion.demo', password: 'Agro2026!', userId: 'user-supervisor' },
+    { username: 'agronomo', email: 'agronomo@agrogestion.demo', password: 'Agro2026!', userId: 'user-supervisor' },
     { username: 'operario', email: 'operario@agrogestion.demo', password: 'Agro2026!', userId: 'user-operator' }
   ]
 }
