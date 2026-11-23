@@ -85,3 +85,35 @@ Proyecto-Agro-develop/
    * Conectar el repositorio GitHub y configurar **Root Directory** en `frontend`.
    * Configurar **Build Command:** `npm run build` y **Output Directory:** `dist`.
    * Registrar en Vercel las 3 variables de entorno (`VITE_APP_NAME`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`).
+
+---
+
+## Portabilidad Arquitectónica y Mitigación de Riesgos de Infraestructura
+
+En cumplimiento de los atributos de calidad de portabilidad e interoperabilidad (norma ISO/IEC 25010), **SENAagro (Línea Base v2.1.1)** está diseñado para operar tanto en nube gestionada (Supabase Cloud + Vercel) como en infraestructura privada (*On-Premise* / servidores institucionales propios) sin reescribir su lógica de negocio.
+
+### 1. Escenarios de Despliegue Soportados
+
+| Escenario de Infraestructura | Arquitectura Técnica | Compatibilidad | Esfuerzo Estimado de Adaptación |
+| :--- | :--- | :--- | :--- |
+| **Nube Gestionada (Por defecto)** | PostgreSQL en Supabase Cloud + Frontend estático en Vercel con persistencia *offline-first* (`RNF-05`). | Nativa (100 %) | Inmediato (variables `.env`). |
+| **Servidor Privado con PostgreSQL 14+** | Motor PostgreSQL institucional ejecutando los scripts `01`, `02` y `03` + contenedor ligero **PostgREST** como capa API REST. | Nativa (90 % – 95 %) | 1 a 3 días (configuración de red y `.env`). |
+| **Intranet Aislada (Docker / Sin salida a Internet)** | Despliegue autoalojado (*Self-Hosted*) mediante Docker Compose (PostgreSQL + PostgREST + GoTrue) y compilación `dist/` servida en Nginx. | Alta (85 % – 90 %) | 3 a 5 días (orquestación de contenedores). |
+
+### 2. Matriz de Mitigación de Riesgos de Migración
+
+1. **Desacoplamiento de Endpoints y Credenciales:**
+   * *Riesgo:* Dependencia de URLs o llaves fijas dentro del código fuente del cliente web.
+   * *Mitigación:* Toda comunicación remota se centraliza en `frontend/src/services/api.js` mediante variables de entorno (`VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`). El cambio hacia un servidor privado requiere únicamente actualizar dichas variables y recompilar el paquete estático (`npm run build`).
+2. **Integridad de Reglas Sanitarias ICA y Seguridad en Base de Datos:**
+   * *Riesgo:* Pérdida de validaciones de Periodos de Carencia (`RF-26`), aislamiento por roles (`RF-08A`) o trazabilidad SHA-256 (`RNF-06`) al cambiar de servidor.
+   * *Mitigación:* Las reglas críticas residen en **SQL estándar y PL/pgSQL puro** dentro de PostgreSQL (`01_schema_tablas_v2_1.sql`, `02_rls_y_seed_santander.sql` y `03_triggers_negocio_ica.sql`), garantizando comportamiento idéntico en cualquier instancia PostgreSQL 14 o superior.
+3. **Capa de Exposición REST sobre PostgreSQL Puro:**
+   * *Riesgo:* Entornos servidores donde solo se habilita el motor PostgreSQL (puerto `5432`) sin capa HTTP intermedia.
+   * *Mitigación:* Despliegue de un binario único o contenedor **PostgREST** conectado al esquema `public` con el rol `anon`/`authenticated`, conservando exactamente el mismo contrato de consultas del cliente `@supabase/supabase-js`.
+4. **Integración con Proveedores de Identidad Externos (SSO / LDAP / OAuth2):**
+   * *Riesgo:* Requerimiento de autenticación centralizada en entornos corporativos o institucionales.
+   * *Mitigación:* El store `frontend/src/stores/auth.js` aísla la resolución de sesión (`restore`, `login`, `logout`) y normaliza los perfiles hacia la matriz RBAC oficial (`ADMIN_PRODUCTOR`, `TECNICO_AGRONOMO`, `OPERARIO_CAMPO`), permitiendo acoplar un proveedor JWT o OIDC externo sin modificar las vistas ni los permisos de módulos (`permissions.js`).
+5. **Continuidad Operativa en Conectividad Intermitente (`RNF-05`):**
+   * *Riesgo:* Latencia alta o cortes de red en zonas rurales o granjas experimentales.
+   * *Mitigación:* La cola de sincronización local (`offlineSync.js`) y el almacenamiento estructurado en navegador garantizan el registro de labores, lectura de sensores y consulta fenológica sin interrupciones, respaldados por 46 pruebas automatizadas de integración en Vitest.
