@@ -196,7 +196,6 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey)
 export async function fetchTelemetryData(unidadId, cicloId) {
   try {
     let query = supabase.from("telemetria_lecturas").select("*").order("registrado_en", { ascending: false }).limit(30);
-    if (cicloId) query = query.eq("ciclo_id", cicloId);
     const { data: lecturas, error: lecturasErr } = await query;
     if (lecturasErr) throw lecturasErr;
 
