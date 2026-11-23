@@ -62,11 +62,10 @@ export const useAuthStore = defineStore('auth', () => {
       const raw = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY)
       if (raw) {
         const session = JSON.parse(raw)
+        const catalogUser = getRecords('users').find((user) => user.id === session?.userId) ?? null
         const storedUser = session?.user
-          ? session.token || getAuthToken()
-            ? mapBackendUserToFrontend(session.user)
-            : getRecords('users').find((user) => user.id === session?.userId) ?? session.user
-          : getRecords('users').find((user) => user.id === session?.userId) ?? null
+          ? (session.token || getAuthToken() ? mapBackendUserToFrontend(session.user) : session.user)
+          : catalogUser
         if (storedUser) delete storedUser.password
         const normalizedStored = normalizeLegacySessionUser(storedUser)
         currentUser.value = normalizedStored && normalizedStored.active !== false ? normalizedStored : null
