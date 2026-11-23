@@ -137,6 +137,52 @@ export const useAuthStore = defineStore('auth', () => {
       return user
     }
 
+    const normalizedEmail = email === 'superadmin@agrogestion.demo' ? 'admin@agrogestion.demo' : email
+    const demoAccountPrecheck = getDemoAccounts().find(
+      (acc) => String(acc.email ?? '').trim().toLowerCase() === normalizedEmail
+    )
+    const shouldUseLegacyHttp = import.meta.env.MODE === 'test' || import.meta.env.VITE_USE_LEGACY_API === 'true'
+
+    if (!shouldUseLegacyHttp && demoAccountPrecheck) {
+      if (demoAccountPrecheck.password !== String(password)) {
+        throw new Error('Correo o contraseña incorrectos.')
+      }
+      const fallbackProfiles = {
+        'admin@agrogestion.demo': {
+          id: 'user-admin',
+          name: 'Carlos Mendoza (Admin Productor)',
+          email: 'admin@agrogestion.demo',
+          role: 'ADMIN_PRODUCTOR',
+          farms: ['farm-1', 'farm-2'],
+          active: true
+        },
+        'agronomo@agrogestion.demo': {
+          id: 'user-supervisor',
+          name: 'Ing. Laura Gómez (Técnico Agrónomo)',
+          email: 'agronomo@agrogestion.demo',
+          role: 'TECNICO_AGRONOMO',
+          farms: ['farm-1', 'farm-2'],
+          active: true
+        },
+        'operario@agrogestion.demo': {
+          id: 'user-operator',
+          name: 'Jorge Ramírez (Operario de Campo)',
+          email: 'operario@agrogestion.demo',
+          role: 'OPERARIO_CAMPO',
+          farms: ['farm-1'],
+          active: true
+        }
+      }
+      const baseUser = fallbackProfiles[normalizedEmail] || normalizeLegacySessionUser(localUser)
+      const user = { ...baseUser }
+      delete user.password
+      clearAuthToken()
+      persistSession(user, null, Boolean(remember))
+      currentUser.value = user
+      ready.value = true
+      return user
+    }
+
     let data = null
     try {
       data = await apiPost('/auth/login', {

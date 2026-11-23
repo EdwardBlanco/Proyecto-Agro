@@ -196,13 +196,13 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey)
 export async function fetchTelemetryData(unidadId, cicloId) {
   try {
     let query = supabase.from("telemetria_lecturas").select("*").order("registrado_en", { ascending: false }).limit(30);
-    if (unidadId) query = query.eq("unidad_id", unidadId);
     if (cicloId) query = query.eq("ciclo_id", cicloId);
-    const { data: lecturas } = await query;
+    const { data: lecturas, error: lecturasErr } = await query;
+    if (lecturasErr) throw lecturasErr;
 
     let actQuery = supabase.from("actuadores_eventos").select("*").order("ejecutado_en", { ascending: false }).limit(10);
-    if (unidadId) actQuery = actQuery.eq("unidad_id", unidadId);
-    const { data: actuadores } = await actQuery;
+    const { data: actuadores, error: actErr } = await actQuery;
+    if (actErr) throw actErr;
 
     if (Array.isArray(lecturas) && lecturas.length > 0) {
       const hum = lecturas.find((r) => r.tipo_sensor === "humedad_suelo")?.valor ?? 38;
