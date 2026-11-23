@@ -9,6 +9,17 @@ import { apiGet, apiPost, clearAuthToken, getAuthToken, setAuthToken, TOKEN_KEY 
 import { mapBackendUserToFrontend, normalizeLoginEmail } from '@/services/mappers'
 import { getDemoAccounts, getRecords } from '@/services/storage'
 
+function normalizeLegacySessionUser(user) {
+  if (!user || typeof user !== "object") return null
+  const roleMap = {
+    SuperAdmin: "ADMIN_PRODUCTOR",
+    Admin: "ADMIN_PRODUCTOR",
+    Operario: "OPERARIO_CAMPO"
+  }
+  const normalizedRole = roleMap[user.role] || user.role
+  return { ...user, role: normalizedRole }
+}
+
 export const SESSION_KEY = 'agrogestion.session.v1'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -57,7 +68,8 @@ export const useAuthStore = defineStore('auth', () => {
             : getRecords('users').find((user) => user.id === session?.userId) ?? session.user
           : getRecords('users').find((user) => user.id === session?.userId) ?? null
         if (storedUser) delete storedUser.password
-        currentUser.value = storedUser && storedUser.active !== false ? storedUser : null
+        const normalizedStored = normalizeLegacySessionUser(storedUser)
+        currentUser.value = normalizedStored && normalizedStored.active !== false ? normalizedStored : null
         if (!currentUser.value && !getAuthToken()) {
           localStorage.removeItem(SESSION_KEY)
           sessionStorage.removeItem(SESSION_KEY)

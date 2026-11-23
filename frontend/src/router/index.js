@@ -62,14 +62,20 @@ router.beforeEach(async (to) => {
   if (to.meta.guest && auth.isAuthenticated) return { name: 'dashboard' }
 
   // Redirección basada en roles
-  if (to.name === 'dashboard' && auth.isOperarioCampo) return { name: 'operator-dashboard' }
-  if (to.name === 'operator-dashboard' && !auth.isOperarioCampo) return { name: 'dashboard' }
+  if (to.name === 'dashboard' && (auth.currentUser?.role === 'OPERARIO_CAMPO')) return { name: 'operator-dashboard' }
+  if (to.name === 'operator-dashboard' && !(auth.currentUser?.role === 'OPERARIO_CAMPO')) return { name: 'dashboard' }
 
   // Verificación de permisos de módulo
-  if (to.meta.module && !canAccess(auth.currentUser, to.meta.module)) return { name: 'dashboard' }
+  if (to.meta.module && !canAccess(auth.currentUser, to.meta.module)) {
+    if (to.name === 'dashboard' || to.name === 'operator-dashboard') {
+      auth.logout()
+      return { name: 'login' }
+    }
+    return { name: auth.currentUser?.role === 'OPERARIO_CAMPO' ? 'operator-dashboard' : 'dashboard' }
+  }
 
   // Bloquear rutas financieras para operarios de campo
-  if (to.meta.module === 'users' && auth.isOperarioCampo) return { name: 'dashboard' }
+  if (to.meta.module === 'users' && (auth.currentUser?.role === 'OPERARIO_CAMPO')) return { name: 'dashboard' }
 
   // Verificación de acceso a lotes
   if (to.name === 'lots') {
