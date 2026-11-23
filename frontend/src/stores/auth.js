@@ -145,8 +145,9 @@ export const useAuthStore = defineStore('auth', () => {
       })
     } catch (error) {
       const isOfflineOrNoBackend = !error?.status || error.status >= 500 || error.status === 404
+      const normalizedEmail = email === 'superadmin@agrogestion.demo' ? 'admin@agrogestion.demo' : email
       const demoAccount = getDemoAccounts().find(
-        (acc) => String(acc.email ?? '').trim().toLowerCase() === email
+        (acc) => String(acc.email ?? '').trim().toLowerCase() === normalizedEmail
       )
       if (isOfflineOrNoBackend && demoAccount) {
         if (demoAccount.password !== String(password)) {
@@ -178,7 +179,7 @@ export const useAuthStore = defineStore('auth', () => {
             active: true
           }
         }
-        const baseUser = localUser ? normalizeLegacySessionUser(localUser) : fallbackProfiles[email]
+        const baseUser = fallbackProfiles[normalizedEmail] || normalizeLegacySessionUser(localUser)
         const user = { ...baseUser }
         delete user.password
         clearAuthToken()
