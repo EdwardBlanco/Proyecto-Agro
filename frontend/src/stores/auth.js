@@ -7,18 +7,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { apiGet, apiPost, clearAuthToken, getAuthToken, setAuthToken, TOKEN_KEY } from '@/services/api'
 import { mapBackendUserToFrontend, normalizeLoginEmail } from '@/services/mappers'
-import { getDemoAccounts, getRecords } from '@/services/storage'
-
-function normalizeLegacySessionUser(user) {
-  if (!user || typeof user !== "object") return null
-  const roleMap = {
-    SuperAdmin: "ADMIN_PRODUCTOR",
-    Admin: "ADMIN_PRODUCTOR",
-    Operario: "OPERARIO_CAMPO"
-  }
-  const normalizedRole = roleMap[user.role] || user.role
-  return { ...user, role: normalizedRole }
-}
+import { getRecords } from '@/services/storage'
 
 export const SESSION_KEY = 'agrogestion.session.v1'
 
@@ -62,13 +51,13 @@ export const useAuthStore = defineStore('auth', () => {
       const raw = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY)
       if (raw) {
         const session = JSON.parse(raw)
-        const catalogUser = getRecords('users').find((user) => user.id === session?.userId) ?? null
         const storedUser = session?.user
-          ? (session.token || getAuthToken() ? mapBackendUserToFrontend(session.user) : session.user)
-          : catalogUser
+          ? session.token || getAuthToken()
+            ? mapBackendUserToFrontend(session.user)
+            : getRecords('users').find((user) => user.id === session?.userId) ?? session.user
+          : getRecords('users').find((user) => user.id === session?.userId) ?? null
         if (storedUser) delete storedUser.password
-        const normalizedStored = normalizeLegacySessionUser(storedUser)
-        currentUser.value = normalizedStored && normalizedStored.active !== false ? normalizedStored : null
+        currentUser.value = storedUser && storedUser.active !== false ? storedUser : null
         if (!currentUser.value && !getAuthToken()) {
           localStorage.removeItem(SESSION_KEY)
           sessionStorage.removeItem(SESSION_KEY)
@@ -136,105 +125,10 @@ export const useAuthStore = defineStore('auth', () => {
       return user
     }
 
-    const normalizedEmail = email === 'superadmin@agrogestion.demo' ? 'admin@agrogestion.demo' : email
-    const demoAccountPrecheck = getDemoAccounts().find(
-      (acc) => String(acc.email ?? '').trim().toLowerCase() === normalizedEmail
-    )
-    const shouldUseLegacyHttp = import.meta.env.MODE === 'test' || import.meta.env.VITE_USE_LEGACY_API === 'true'
-
-    if (!shouldUseLegacyHttp && demoAccountPrecheck) {
-      if (demoAccountPrecheck.password !== String(password)) {
-        throw new Error('Correo o contraseña incorrectos.')
-      }
-      const fallbackProfiles = {
-        'admin@agrogestion.demo': {
-          id: 'user-admin',
-          name: 'Carlos Mendoza (Admin Productor)',
-          email: 'admin@agrogestion.demo',
-          role: 'ADMIN_PRODUCTOR',
-          farms: ['farm-1', 'farm-2'],
-          active: true
-        },
-        'agronomo@agrogestion.demo': {
-          id: 'user-supervisor',
-          name: 'Ing. Laura Gómez (Técnico Agrónomo)',
-          email: 'agronomo@agrogestion.demo',
-          role: 'TECNICO_AGRONOMO',
-          farms: ['farm-1', 'farm-2'],
-          active: true
-        },
-        'operario@agrogestion.demo': {
-          id: 'user-operator',
-          name: 'Jorge Ramírez (Operario de Campo)',
-          email: 'operario@agrogestion.demo',
-          role: 'OPERARIO_CAMPO',
-          farms: ['farm-1'],
-          active: true
-        }
-      }
-      const baseUser = fallbackProfiles[normalizedEmail] || normalizeLegacySessionUser(localUser)
-      const user = { ...baseUser }
-      delete user.password
-      clearAuthToken()
-      persistSession(user, null, Boolean(remember))
-      currentUser.value = user
-      ready.value = true
-      return user
-    }
-
-    let data = null
-    try {
-      data = await apiPost('/auth/login', {
-        correo: email,
-        contrasena: password
-      })
-    } catch (error) {
-      const isOfflineOrNoBackend = !error?.status || error.status >= 500 || error.status === 404
-      const normalizedEmail = email === 'superadmin@agrogestion.demo' ? 'admin@agrogestion.demo' : email
-      const demoAccount = getDemoAccounts().find(
-        (acc) => String(acc.email ?? '').trim().toLowerCase() === normalizedEmail
-      )
-      if (isOfflineOrNoBackend && demoAccount) {
-        if (demoAccount.password !== String(password)) {
-          throw new Error('Correo o contraseña incorrectos.')
-        }
-        const fallbackProfiles = {
-          'admin@agrogestion.demo': {
-            id: 'user-admin',
-            name: 'Carlos Mendoza (Admin Productor)',
-            email: 'admin@agrogestion.demo',
-            role: 'ADMIN_PRODUCTOR',
-            farms: ['farm-1', 'farm-2'],
-            active: true
-          },
-          'agronomo@agrogestion.demo': {
-            id: 'user-supervisor',
-            name: 'Ing. Laura Gómez (Técnico Agrónomo)',
-            email: 'agronomo@agrogestion.demo',
-            role: 'TECNICO_AGRONOMO',
-            farms: ['farm-1', 'farm-2'],
-            active: true
-          },
-          'operario@agrogestion.demo': {
-            id: 'user-operator',
-            name: 'Jorge Ramírez (Operario de Campo)',
-            email: 'operario@agrogestion.demo',
-            role: 'OPERARIO_CAMPO',
-            farms: ['farm-1'],
-            active: true
-          }
-        }
-        const baseUser = fallbackProfiles[normalizedEmail] || normalizeLegacySessionUser(localUser)
-        const user = { ...baseUser }
-        delete user.password
-        clearAuthToken()
-        persistSession(user, null, Boolean(remember))
-        currentUser.value = user
-        ready.value = true
-        return user
-      }
-      throw error
-    }
+    const data = await apiPost('/auth/login', {
+      correo: email,
+      contrasena: password
+    })
 
     const rawUser = data?.usuario ?? data?.user ?? data
     const token = data?.token ?? null

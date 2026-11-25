@@ -28,30 +28,21 @@ const isCompactViewport = ref(window.innerWidth < 1024)
 const notificationPopover = ref(false)
 const weatherData = ref(null)
 const weatherState = ref('loading')
-const isOperator = computed(() => auth.currentUser?.role === 'OPERARIO_CAMPO')
 
 // Catálogo de rutas del menú lateral agrupadas por área funcional
 const links = [
-  { title: 'Resumen', icon: 'space_dashboard', name: 'dashboard', module: 'dashboard', group: 'GENERAL', hideForOperator: true },
-  { title: 'Mi jornada', icon: 'today', name: 'operator-dashboard', module: 'dashboard', group: 'GENERAL', operatorOnly: true },
+  { title: 'Resumen', icon: 'space_dashboard', name: 'dashboard', module: 'dashboard', group: 'GENERAL' },
   { title: 'Predios y lotes', icon: 'landscape', name: 'farms', module: 'farms', group: 'GESTIÓN AGRÍCOLA' },
   { title: 'Cultivos', icon: 'eco', name: 'crops', module: 'crops', group: 'GESTIÓN AGRÍCOLA' },
   { title: 'Insumos', icon: 'inventory_2', name: 'inputs', module: 'inputs', group: 'GESTIÓN AGRÍCOLA' },
-  { title: 'Calendario agrícola', icon: 'calendar_month', name: 'calendar', module: 'calendar', group: 'PRODUCCIÓN' },
   { title: 'Ciclos productivos', icon: 'autorenew', name: 'cycles', module: 'cycles', group: 'PRODUCCIÓN' },
   { title: 'Labores e incidencias', icon: 'event_note', name: 'activities', module: 'activities', group: 'PRODUCCIÓN' },
   { title: 'Semilleros', icon: 'spa', name: 'nurseries', module: 'nurseries', group: 'PRODUCCIÓN' },
   { title: 'Cosechas', icon: 'agriculture', name: 'harvests', module: 'harvests', group: 'PRODUCCIÓN' },
-  { title: 'Telemetría IoT', icon: 'sensors', name: 'telemetry', module: 'telemetry', group: 'MONITOREO' },
-  { title: 'Finanzas y Márgenes', icon: 'payments', name: 'finance', module: 'finance', group: 'GERENCIA Y BPA' },
-  { title: 'Libro Oficial ICA', icon: 'verified_user', name: 'ica-book', module: 'ica-book', group: 'GERENCIA Y BPA' },
+  { title: 'Telemetría', icon: 'sensors', name: 'telemetry', module: 'telemetry', group: 'MONITOREO' },
   { title: 'Usuarios y permisos', icon: 'groups', name: 'users', module: 'users', group: 'ADMINISTRACIÓN' }
 ]
-const visibleLinks = computed(() => links.filter((link) =>
-  canAccess(auth.currentUser, link.module) &&
-  (!link.operatorOnly || isOperator.value) &&
-  (!link.hideForOperator || !isOperator.value)
-))
+const visibleLinks = computed(() => links.filter((link) => canAccess(auth.currentUser, link.module)))
 const groupedLinks = computed(() => visibleLinks.value.reduce((groups, link) => {
   groups[link.group] ??= []
   groups[link.group].push(link)
@@ -73,31 +64,27 @@ function updateViewportStatus() {
   isCompactViewport.value = window.innerWidth < 1024
 }
 
-async function loadWeather() {
-  weatherState.value = 'loading'
-  const loadFallbackZoneWeather = async () => {
-    weatherData.value = await getCurrentWeather()
-    weatherState.value = weatherData.value ? 'ready' : 'no-data'
-  }
-
+function loadWeather() {
   if (!navigator.geolocation) {
-    await loadFallbackZoneWeather()
+    weatherState.value = 'unavailable'
     return
   }
-
+  weatherState.value = 'loading'
   try {
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
       try {
         weatherData.value = await getCurrentWeather({ lat: coords.latitude, lon: coords.longitude })
         weatherState.value = weatherData.value ? 'ready' : 'no-data'
-      } catch {
-        await loadFallbackZoneWeather()
+      } catch (error) {
+        console.error('No fue posible cargar el clima.', error)
+        weatherState.value = 'no-data'
       }
-    }, async () => {
-      await loadFallbackZoneWeather()
-    }, { maximumAge: 300000, timeout: 5000 })
-  } catch {
-    await loadFallbackZoneWeather()
+    }, (error) => {
+      weatherState.value = error.code === 1 ? 'permission' : 'no-data'
+    }, { maximumAge: 300000, timeout: 10000 })
+  } catch (error) {
+    console.error('No fue posible solicitar la ubicación.', error)
+    weatherState.value = 'unavailable'
   }
 }
 
@@ -109,7 +96,7 @@ const weatherMessage = computed(() => ({
   permission: 'La ubicación no está autorizada.',
   unavailable: 'La ubicación no está disponible en este dispositivo.',
   'no-data': 'No hay datos del clima disponibles.',
-  ready: `Clima actual · ${weatherData.value?.zoneName || "San Gil, Santander"}`
+  ready: 'Clima de tu zona.'
 })[weatherState.value])
 
 onMounted(() => {
@@ -184,19 +171,11 @@ function archiveNotification(notification) {
 
 function deleteNotification(notification) {
   if (!canManageNotificationActions(auth.currentUser)) return
-  $q.dialog({
-    title: 'Eliminar notificación',
-    message: `¿Quieres eliminar “${notification.title}”? Esta acción no se puede deshacer.`,
-    cancel: { label: 'Cancelar', flat: true },
-    ok: { label: 'Eliminar', color: 'negative' },
-    persistent: true
-  }).onOk(() => {
-    try {
-      deleteLocalNotification(notification)
-    } catch (error) {
-      $q.notify({ type: 'negative', message: error.message })
-    }
-  })
+  try {
+    deleteLocalNotification(notification)
+  } catch (error) {
+    $q.notify({ type: 'negative', message: error.message })
+  }
 }
 
 /**
@@ -277,7 +256,7 @@ async function openAllNotifications() {
                     <q-avatar size="38px" class="brand-green-tint brand-green-text"><q-icon :name="notification.title.toLowerCase().includes('humedad') ? 'water_drop' : 'notifications_active'" /></q-avatar>
                     <span class="notification-entry-copy"><strong>{{ notification.title }}</strong><span>{{ notification.message }}</span><small>{{ relativeTime(notification.date) }}</small></span>
                     <span v-if="isUnread(notification)" class="notification-unread-dot" aria-label="No leída"></span>
-                    <div v-if="canManageNotificationActions(auth.currentUser)" class="notification-entry-actions">
+                    <div class="notification-entry-actions">
                       <q-btn flat round dense icon="done" aria-label="Marcar como leída" :disable="!isUnread(notification)" @click="markNotificationRead(notification)"><q-tooltip>Marcar como leída</q-tooltip></q-btn>
                       <q-btn flat round dense icon="archive" aria-label="Archivar" @click="archiveNotification(notification)"><q-tooltip>Archivar</q-tooltip></q-btn>
                       <q-btn flat round dense icon="delete_outline" color="negative" aria-label="Eliminar" @click="deleteNotification(notification)"><q-tooltip>Eliminar</q-tooltip></q-btn>

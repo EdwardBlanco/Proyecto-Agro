@@ -12,10 +12,8 @@ document.title = import.meta.env.VITE_APP_NAME || 'SENAgro'
 
 initializeStorage()
 
-const pinia = createPinia()
-
 createApp(App)
-  .use(pinia)
+  .use(createPinia())
   .use(router)
   .use(Quasar, {
     plugins: { Notify, Dialog, Loading },

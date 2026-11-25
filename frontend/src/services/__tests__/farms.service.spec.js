@@ -50,7 +50,7 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
 
   // Pruebas unitarias de mappers.js sin llamadas HTTP
   describe('Adaptadores bidireccionales (mappers.js)', () => {
-    it('mapFrontendFarmToBackend convierte HA y omite coordenadas no registradas', () => {
+    it('mapFrontendFarmToBackend convierte HA a area_m2, construye ubicacion y asigna coordenadas válidas', () => {
       const payload = mapFrontendFarmToBackend({
         name: '  Finca Los Pinos  ',
         municipality: 'Guarne',
@@ -62,6 +62,8 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
       expect(payload).toEqual({
         nombre: 'Finca Los Pinos',
         ubicacion: 'Guarne, Antioquia',
+        latitud: 6.1552,
+        longitud: -75.3737,
         area_m2: 125000,
         estado: true
       })
@@ -93,7 +95,6 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
           ubicacion: 'Rionegro, Antioquia',
           latitud: 6.1552,
           longitud: -75.3737,
-          responsable: 'user-farm-owner',
           area_m2: 240000,
           estado: true
         },
@@ -106,9 +107,7 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
         municipality: 'Rionegro',
         department: 'Antioquia',
         area: 24,
-        latitude: 6.1552,
-        longitude: -75.3737,
-        owner: 'user-farm-owner',
+        owner: 'user-admin',
         status: 'Activo'
       })
 
@@ -124,7 +123,7 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
       )
 
       expect(withoutDepartment.municipality).toBe('El Retiro')
-      expect(withoutDepartment.department).toBe('')
+      expect(withoutDepartment.department).toBe('Antioquia')
       expect(withoutDepartment.area).toBe(5.5)
       expect(withoutDepartment.status).toBe('Inactivo')
     })
@@ -183,8 +182,6 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
         municipality: 'Rionegro',
         department: 'Antioquia',
         area: 24,
-        latitude: 6.1552,
-        longitude: -75.3737,
         owner: 'user-admin',
         status: 'Activo'
       })
@@ -204,7 +201,7 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
       ])
     })
 
-    // Verifica creación en backend y conservación de metadatos locales no persistidos por la API.
+    // Verifica creación en backend y conservación de metadatos locales (owner, status, image) en storage.js
     it('createFarm envía POST /api/v1/predios con area_m2 y ubicacion y guarda el predio en storage', async () => {
       setAuthToken('jwt-admin-token', true)
 
@@ -217,6 +214,8 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
               _id: '65f1a2b3c4d5e6f7a8b9d010',
               nombre: 'Hacienda San Isidro',
               ubicacion: 'Santuario, Antioquia',
+              latitud: 6.1552,
+              longitud: -75.3737,
               area_m2: 150000,
               estado: true
             }
@@ -232,11 +231,7 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
         area: 15,
         owner: 'user-supervisor',
         status: 'En preparación',
-        image: 'data:image/png;base64,iVBORw0KGgo=',
-        landUse: 'Agrícola',
-        waterSources: 'Nacimiento de agua',
-        environmentNotes: 'Protección de ronda',
-        documentReferences: 'https://example.test/predio.pdf'
+        image: 'data:image/png;base64,iVBORw0KGgo='
       })
 
       expect(fetchSpy).toHaveBeenCalledTimes(1)
@@ -246,7 +241,8 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
       expect(JSON.parse(options.body)).toEqual({
         nombre: 'Hacienda San Isidro',
         ubicacion: 'Santuario, Antioquia',
-        responsable: 'user-supervisor',
+        latitud: 6.1552,
+        longitud: -75.3737,
         area_m2: 150000,
         estado: true
       })
@@ -259,11 +255,7 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
         area: 15,
         owner: 'user-supervisor',
         status: 'En preparación',
-        image: 'data:image/png;base64,iVBORw0KGgo=',
-        landUse: 'Agrícola',
-        waterSources: 'Nacimiento de agua',
-        environmentNotes: 'Protección de ronda',
-        documentReferences: 'https://example.test/predio.pdf'
+        image: 'data:image/png;base64,iVBORw0KGgo='
       })
 
       expect(getRecord('farms', '65f1a2b3c4d5e6f7a8b9d010')).toEqual(created)
@@ -281,6 +273,8 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
             _id: 'farm-1',
             nombre: 'El Robledal Norte',
             ubicacion: 'Rionegro, Antioquia',
+            latitud: 6.1552,
+            longitud: -75.3737,
             area_m2: 300000,
             estado: true
           }
@@ -303,7 +297,8 @@ describe('Servicio y Adaptadores de Predios (farms.service.js / mappers.js)', ()
       expect(JSON.parse(options.body)).toEqual({
         nombre: 'El Robledal Norte',
         ubicacion: 'Rionegro, Antioquia',
-        responsable: 'user-admin',
+        latitud: 6.1552,
+        longitud: -75.3737,
         area_m2: 300000,
         estado: true
       })

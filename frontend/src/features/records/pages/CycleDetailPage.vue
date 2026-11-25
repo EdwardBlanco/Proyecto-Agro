@@ -25,14 +25,7 @@ const cycle = computed(() => {
 const crop = computed(() => getRecord('crops', cycle.value?.cropId))
 const farm = computed(() => getRecord('farms', cycle.value?.farmId))
 const lot = computed(() => getRecord('lots', cycle.value?.lotId))
-const activities = computed(() => getRecords('activities')
-  .filter((item) => item.cycleId === cycle.value?.id)
-  .filter((item) => {
-    if (auth.currentUser?.role !== 'Operario') return true
-    return [auth.currentUser.id, auth.currentUser.name]
-      .filter(Boolean)
-      .some((identity) => String(identity) === String(item.responsible ?? '').trim())
-  }))
+const activities = computed(() => getRecords('activities').filter((item) => item.cycleId === cycle.value?.id))
 const harvests = computed(() => getRecords('harvests').filter((item) => item.cycleId === cycle.value?.id))
 const nurseries = computed(() => getRecords('nurseries').filter((item) => item.cycleId === cycle.value?.id))
 const laborCount = computed(() => activities.value.filter((item) => item.kind === 'Labor').length)
@@ -60,7 +53,7 @@ function formatDate(value) {
   <q-page v-if="cycle" class="page-content cycle-detail-page">
     <BackButton label="Volver a ciclos" :to="{ name: 'cycles' }" />
     <div class="cycle-detail-status"><StatusBadge :status="cycle.status" /></div>
-    <div class="cycle-metric-grid"><q-card flat bordered><small>Área sembrada</small><strong>{{ cycle.area !== null && cycle.area !== undefined && cycle.area !== '' ? `${Number(cycle.area).toLocaleString('es-CO', { maximumFractionDigits: 2 })} HA` : 'Sin datos registrados' }}</strong><small>HA = Hectáreas</small></q-card><q-card flat bordered><small>Meta de producción</small><strong>{{ cycle.target !== null && cycle.target !== undefined && cycle.target !== '' ? `${Number(cycle.target).toLocaleString('es-CO')} kg` : 'Sin datos registrados' }}</strong></q-card><q-card flat bordered><small>Cosecha acumulada</small><strong>{{ total.toLocaleString('es-CO') }} kg</strong></q-card><q-card flat bordered><small>Fecha de inicio</small><strong>{{ formatDate(cycle.startDate) }}</strong></q-card><q-card flat bordered><small>Fecha estimada de finalización</small><strong>{{ formatDate(cycle.estimatedEndDate) }}</strong></q-card></div>
+    <div class="cycle-metric-grid"><q-card flat bordered><small>Área sembrada</small><strong>{{ cycle.area !== null && cycle.area !== undefined && cycle.area !== '' ? `${Number(cycle.area).toLocaleString('es-CO', { maximumFractionDigits: 2 })} HA` : 'Sin datos registrados' }}</strong><small>HA = Hectáreas</small></q-card><q-card flat bordered><small>Meta de producción</small><strong>{{ cycle.target !== null && cycle.target !== undefined && cycle.target !== '' ? `${Number(cycle.target).toLocaleString('es-CO')} kg` : 'Sin datos registrados' }}</strong></q-card><q-card flat bordered><small>Cosecha acumulada</small><strong>{{ total.toLocaleString('es-CO') }} kg</strong></q-card><q-card flat bordered><small>Fecha de inicio</small><strong>{{ formatDate(cycle.startDate) }}</strong></q-card></div>
     <div class="cycle-related-summary">
       <div><span>Labores asociadas</span><strong>{{ laborCount }}</strong><small>Registros de labor vinculados a este ciclo.</small></div>
       <div><span>Incidencias asociadas</span><strong>{{ incidenceCount }}</strong><small>Registros de incidencia vinculados a este ciclo.</small></div>
@@ -81,7 +74,7 @@ function formatDate(value) {
         <q-list v-if="activities.length">
           <q-item v-for="item in activities" :key="item.id" class="activity-row">
             <q-item-section avatar><q-avatar :class="item.kind === 'Incidencia' ? 'activity-incidence-avatar' : 'brand-green-tint brand-green-text'" :icon="item.kind === 'Labor' ? 'task_alt' : 'warning_amber'" /></q-item-section>
-            <q-item-section><q-item-label>{{ item.type }} · {{ item.kind }}</q-item-label><q-item-label caption>{{ item.description || 'Sin datos registrados' }} · {{ item.responsible || 'Sin datos registrados' }}<template v-if="item.time"> · {{ item.time }}</template><template v-if="item.priority"> · Prioridad {{ item.priority }}</template><template v-if="item.correctiveAction"> · Seguimiento: {{ item.correctiveAction }}</template></q-item-label></q-item-section>
+            <q-item-section><q-item-label>{{ item.type }} · {{ item.kind }}</q-item-label><q-item-label caption>{{ item.description || 'Sin datos registrados' }} · {{ item.responsible || 'Sin datos registrados' }}</q-item-label></q-item-section>
             <q-item-section side><div class="cycle-activity-side"><span>{{ formatDate(item.date) }}</span><StatusBadge v-if="item.status" :status="item.status" /></div></q-item-section>
           </q-item>
         </q-list>

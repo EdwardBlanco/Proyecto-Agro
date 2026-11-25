@@ -13,23 +13,6 @@ import {
 import { getRecords, setRecords } from '@/services/storage'
 import { useAuthStore } from '@/stores/auth'
 
-function mergeLocalFarmFields(farm, formFarm) {
-  const localFields = ['landUse', 'waterSources', 'environmentNotes', 'documentReferences']
-  return {
-    ...farm,
-    ...(formFarm?.owner ? { owner: formFarm.owner } : {}),
-    ...(formFarm?.municipality ? { municipality: formFarm.municipality } : {}),
-    ...(formFarm?.department ? { department: formFarm.department } : {}),
-    ...(formFarm?.status ? { status: formFarm.status } : {}),
-    ...(formFarm?.latitude !== undefined && formFarm.latitude !== '' ? { latitude: formFarm.latitude } : {}),
-    ...(formFarm?.longitude !== undefined && formFarm.longitude !== '' ? { longitude: formFarm.longitude } : {}),
-    ...(formFarm?.image !== undefined ? { image: formFarm.image } : {}),
-    ...Object.fromEntries(localFields
-      .filter((key) => formFarm?.[key] !== undefined)
-      .map((key) => [key, formFarm[key]]))
-  }
-}
-
 /**
  * Consulta el listado de predios en GET /predios, deduplica por ID/nombre,
  * guarda en caché local y migra las referencias farmId en otras entidades si es necesario.
@@ -111,7 +94,14 @@ export async function createFarm(formFarm) {
   const payload = mapFrontendFarmToBackend(formFarm)
   const data = await apiPost('/predios', payload)
   const rawFarm = data?.predio ?? data?.farm ?? data
-  const merged = mergeLocalFarmFields(rawFarm, formFarm)
+  const merged = {
+    ...rawFarm,
+    ...(formFarm?.owner ? { owner: formFarm.owner } : {}),
+    ...(formFarm?.municipality ? { municipality: formFarm.municipality } : {}),
+    ...(formFarm?.department ? { department: formFarm.department } : {}),
+    ...(formFarm?.status ? { status: formFarm.status } : {}),
+    ...(formFarm?.image !== undefined ? { image: formFarm.image } : {})
+  }
   return mapBackendFarmToFrontend(merged, { syncStorage: true })
 }
 
@@ -122,7 +112,14 @@ export async function updateFarm(id, formFarm) {
   const payload = mapFrontendFarmToBackend(formFarm)
   const data = await apiPatch(`/predios/${id}`, payload)
   const rawFarm = data?.predio ?? data?.farm ?? data
-  const merged = mergeLocalFarmFields(rawFarm, formFarm)
+  const merged = {
+    ...rawFarm,
+    ...(formFarm?.owner ? { owner: formFarm.owner } : {}),
+    ...(formFarm?.municipality ? { municipality: formFarm.municipality } : {}),
+    ...(formFarm?.department ? { department: formFarm.department } : {}),
+    ...(formFarm?.status ? { status: formFarm.status } : {}),
+    ...(formFarm?.image !== undefined ? { image: formFarm.image } : {})
+  }
   return mapBackendFarmToFrontend(merged, { syncStorage: true })
 }
 

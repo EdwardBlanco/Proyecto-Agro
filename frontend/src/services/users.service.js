@@ -100,10 +100,7 @@ export async function createUser(formUser) {
   const rawUser = data?.usuario ?? data?.user ?? data
   const merged = {
     ...rawUser,
-    ...(Array.isArray(formUser?.farms) ? { farms: formUser.farms } : {}),
-    ...(formUser?.eppStatus !== undefined ? { eppStatus: formUser.eppStatus } : {}),
-    ...(formUser?.eppDeliveredAt !== undefined ? { eppDeliveredAt: formUser.eppDeliveredAt } : {}),
-    ...(Array.isArray(formUser?.trainingRecords) ? { trainingRecords: formUser.trainingRecords } : {})
+    ...(Array.isArray(formUser?.farms) ? { farms: formUser.farms } : {})
   }
   return mapBackendUserToFrontend(merged, { syncStorage: true })
 }
@@ -117,10 +114,7 @@ export async function updateUser(id, formUser) {
   const rawUser = data?.usuario ?? data?.user ?? data
   const merged = {
     ...rawUser,
-    ...(Array.isArray(formUser?.farms) ? { farms: formUser.farms } : {}),
-    ...(formUser?.eppStatus !== undefined ? { eppStatus: formUser.eppStatus } : {}),
-    ...(formUser?.eppDeliveredAt !== undefined ? { eppDeliveredAt: formUser.eppDeliveredAt } : {}),
-    ...(Array.isArray(formUser?.trainingRecords) ? { trainingRecords: formUser.trainingRecords } : {})
+    ...(Array.isArray(formUser?.farms) ? { farms: formUser.farms } : {})
   }
   return mapBackendUserToFrontend(merged, { syncStorage: true })
 }

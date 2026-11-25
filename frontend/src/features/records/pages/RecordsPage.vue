@@ -35,7 +35,6 @@ import lotPlaceholder from '@/assets/lot-placeholder.svg'
 import { getResponsibleUsers } from '@/services/mock/users'
 import { formatDateTime } from '@/services/dates'
 import { harvestKilograms } from '@/services/production'
-import { isFieldVisible, validateConfiguredFields } from '@/features/records/validation'
 
 const route = useRoute()
 const router = useRouter()
@@ -51,6 +50,7 @@ const formFields = computed(() => {
   const isAdmin = auth.currentUser?.role === 'Admin'
   return config.value.fields
     .filter((field) => isAdmin ? field.key !== 'farms' : field.key !== 'farmId')
+    .filter((field) => isAdmin || field.key !== 'eppStatus')
     .filter((field) => !(field.key === 'password' && editing.value && !isAdmin))
     .map((field) => {
       if (field.key === 'role' && isAdmin) {
@@ -80,26 +80,13 @@ const form = ref({})
 const formRef = ref(null)
 const activityStep = ref(1)
 const activityFieldGroups = [
-  { name: 1, title: 'Actividad y programación', caption: 'Relaciona la labor o incidencia con el ciclo y su fecha.', fields: ['cycleId', 'kind', 'type', 'date', 'time'] },
-  { name: 2, title: 'Ejecución y trazabilidad', caption: 'Registra recursos, productos aplicados y seguimiento disponible.', fields: ['description', 'inputIds', 'applicationType', 'applications', 'equipmentUsed', 'evidenceReferences', 'priority', 'correctiveAction', 'followUpDate', 'notes'] },
-  { name: 3, title: 'Responsables y estado', caption: 'Identifica al responsable, participantes y estado del registro.', fields: ['responsible', 'participants', 'status'] }
+  { name: 1, title: 'Seleccionar ciclo', caption: 'El ciclo productivo define el lote de trabajo.', fields: ['cycleId'] },
+  { name: 2, title: 'Labor o incidencia', caption: 'Describe el tipo de actividad y el trabajo realizado.', fields: ['kind', 'type', 'description', 'notes'] },
+  { name: 3, title: 'Responsable y seguimiento', caption: 'Asigna quién realizó el registro y su estado.', fields: ['responsible', 'date', 'status'] }
 ]
 const canEdit = computed(() => config.value.entity !== 'notifications' && canWrite(auth.currentUser, config.value.entity))
 const canAdd = computed(() => canEdit.value && config.value.entity !== 'telemetry')
-const fieldIsVisible = (field) => field.key !== 'otherCategory'
-  ? isFieldVisible(field, form.value)
-  : form.value.category === 'Otro'
-const visibleFormFields = computed(() => formFields.value.filter(fieldIsVisible))
-const formSections = computed(() => {
-  const sections = config.value.sections ?? [{ title: 'Información del registro', fields: config.value.fields.map((field) => field.key) }]
-  return sections.map((section) => ({
-    ...section,
-    fields: visibleFormFields.value.filter((field) => section.fields.includes(field.key))
-  })).filter((section) => section.fields.length)
-})
-const activityFieldsForStep = (step) => config.value.fields
-  .filter((field) => activityFieldGroups[step - 1].fields.includes(field.key))
-  .filter(fieldIsVisible)
+const activityFieldsForStep = (step) => config.value.fields.filter((field) => activityFieldGroups[step - 1].fields.includes(field.key))
 
 const allRecords = computed(() => getRecords(config.value.entity))
 const allowedFarmIds = computed(() => visibleFarmIds(auth.currentUser))
@@ -128,12 +115,6 @@ function relatedFarmId(entity, item) {
  * Determina si un registro es visible para el usuario actual según visibleFarmIds().
  */
 function isVisible(item) {
-  if (auth.currentUser?.role === 'Operario') {
-    if (config.value.entity === 'activities') {
-      const identity = [auth.currentUser.id, auth.currentUser.name].filter(Boolean).map(String)
-      if (!identity.includes(String(item.responsible ?? '').trim())) return false
-    }
-  }
   if (!allowedFarmIds.value) return true
   const farmId = relatedFarmId(config.value.entity, item)
   if (farmId) return allowedFarmIds.value.includes(farmId)
@@ -238,7 +219,6 @@ function displayRow(item) {
   }
   if (config.value.entity === 'cycles') {
     row.startDateLabel = item.startDate ? formatDateLabel(item.startDate) : missingData
-    row.estimatedEndDateLabel = item.estimatedEndDate ? formatDateLabel(item.estimatedEndDate) : missingData
     row.progress = item.progress ?? null
   }
   if (config.value.entity === 'activities') {
@@ -360,7 +340,6 @@ const cycleColumns = [
   ['lotName', 'Lote'],
   ['cropName', 'Cultivo'],
   ['startDateLabel', 'Fecha de inicio'],
-  ['estimatedEndDateLabel', 'Fecha estimada de finalización'],
   ['areaLabel', 'Área cultivada (HA)'],
   ['progress', 'Progreso'],
   ['status', 'Estado']
@@ -609,17 +588,6 @@ const fieldOptions = (field) => {
   if (field.type === 'ref') return relationOptions(field)
   if (field.type === 'users') return getResponsibleUsers(field.role, field.valueField)
   if (field.type === 'farms') return getRecords('farms').map((farm) => ({ label: farm.name, value: farm.id }))
-  if (field.type === 'application-products') {
-    const categories = {
-      Plaguicida: ['Agroquímico'],
-      Fertilizante: ['Fertilizante'],
-      Bioinsumo: ['Bioinsumo'],
-      Otro: []
-    }[form.value.applicationType]
-    return getRecords('inputs')
-      .filter((input) => !categories || categories.length === 0 || categories.includes(input.category))
-      .map((input) => ({ label: input.name, value: input.id }))
-  }
   if (field.key === 'role' && auth.currentUser?.role === 'Admin') {
     return (field.options || []).filter((role) => role !== 'SuperAdmin').map((role) => ({ label: role, value: role }))
   }
@@ -756,12 +724,7 @@ function openEdit(row) {
  */
 function validateRelations() {
   const value = form.value
-  const validationValues = { ...value }
-  for (const field of config.value.fields.filter((item) => item.visibleWhen && !isFieldVisible(item, validationValues))) {
-    validationValues[field.key] = field.multiple ? [] : ''
-  }
-  validateConfiguredFields(visibleFormFields.value, validationValues)
-  for (const field of visibleFormFields.value.filter((item) => item.type === 'number' && value[item.key] !== '' && value[item.key] !== null && value[item.key] !== undefined)) {
+  for (const field of config.value.fields.filter((item) => item.type === 'number' && value[item.key] !== '' && value[item.key] !== null && value[item.key] !== undefined)) {
     const number = Number(String(value[field.key]).replace(',', '.'))
     if (!Number.isFinite(number)) throw new Error(`${field.label} debe ser un número válido.`)
     if (field.integer && !Number.isInteger(number)) throw new Error(`${field.label} debe ser un número entero.`)
@@ -769,9 +732,10 @@ function validateRelations() {
     if (field.min !== undefined && number < field.min) throw new Error(`${field.label} no puede ser menor que ${field.min}.`)
     if (field.max !== undefined && number > field.max) throw new Error(`${field.label} no puede ser mayor que ${field.max}.`)
   }
-  for (const field of visibleFormFields.value) {
+  for (const field of formFields.value) {
     const fieldValue = value[field.key]
-    if (field.required && (fieldValue === '' || fieldValue === null || fieldValue === undefined || (Array.isArray(fieldValue) && fieldValue.length === 0))) throw new Error(`${field.label} es obligatorio.`)
+    if (field.key === 'otherCategory' && value.category !== 'Otro') continue
+    if (field.required && (fieldValue === '' || fieldValue === null || fieldValue === undefined)) throw new Error(`${field.label} es obligatorio.`)
     if (field.maxLength && fieldValue && String(fieldValue).length > field.maxLength) throw new Error(`${field.label} no puede superar ${field.maxLength} caracteres.`)
     if (field.textOnly && fieldValue && !/^[\p{L}\p{M}\s.'-]+$/u.test(fieldValue)) throw new Error(`${field.label} solo puede contener texto.`)
   }
@@ -794,30 +758,16 @@ function validateRelations() {
     const cycle = getRecord('cycles', value.cycleId)
     if (!cycle) throw new Error('Selecciona un ciclo productivo existente.')
     assertFarmAccess(cycle.farmId)
-    for (const inputId of value.inputIds ?? []) {
-      if (!getRecord('inputs', inputId)) throw new Error('Selecciona únicamente insumos existentes.')
-    }
-    const categoryByApplication = {
-      Plaguicida: ['Agroquímico'],
-      Fertilizante: ['Fertilizante'],
-      Bioinsumo: ['Bioinsumo']
-    }
-    for (const application of value.applications ?? []) {
-      const input = getRecord('inputs', application.inputId)
-      if (!input) throw new Error('Selecciona un producto aplicado existente.')
-      const expectedCategories = categoryByApplication[value.applicationType]
-      if (expectedCategories && !expectedCategories.includes(input.category)) {
-        throw new Error(`El producto seleccionado no corresponde al tipo de aplicación "${value.applicationType}".`)
-      }
-    }
   }
   if (config.value.entity === 'nurseries') {
     if (!getRecord('crops', value.cropId)) throw new Error('Selecciona un cultivo existente.')
     if (value.cycleId) assertFarmAccess(getRecord('cycles', value.cycleId)?.farmId)
     if (value.sowingDate > new Date().toISOString().slice(0, 10)) throw new Error('La fecha de siembra no puede estar en el futuro.')
     if (value.cycleId && getRecord('cycles', value.cycleId)?.cropId !== value.cropId) throw new Error('El cultivo debe coincidir con el cultivo del ciclo asociado.')
+    if (value.germinationDate && value.sowingDate && value.germinationDate < value.sowingDate) throw new Error('La germinación no puede ser anterior a la siembra.')
+    if (value.transplantDate && value.sowingDate && value.transplantDate < value.sowingDate) throw new Error('El trasplante no puede ser anterior a la siembra.')
+    if (value.transplantDate && value.germinationDate && value.transplantDate < value.germinationDate) throw new Error('El trasplante no puede ser anterior a la germinación.')
     if (Number(value.germination) < 0 || Number(value.germination) > 100) throw new Error('La germinación debe estar entre 0 y 100 %.')
-    if ((value.quantity || value.unit) && (!Number(value.quantity) || !value.unit)) throw new Error('Indica una cantidad positiva y su unidad para el semillero.')
   }
   if (config.value.entity === 'harvests' && !getRecord('cycles', value.cycleId)) throw new Error('Selecciona un ciclo productivo existente.')
   if (config.value.entity === 'harvests') {
@@ -825,10 +775,6 @@ function validateRelations() {
     assertFarmAccess(cycle.farmId)
     if (Number(value.quantity) <= 0) throw new Error('La cantidad cosechada debe ser mayor que cero.')
     if (value.date < cycle.startDate) throw new Error('La fecha de cosecha no puede ser anterior al inicio del ciclo.')
-    if (value.traceabilityCode && getRecords('harvests').some((item) =>
-      item.id !== editing.value &&
-      String(item.traceabilityCode ?? '').trim().toLowerCase() === String(value.traceabilityCode).trim().toLowerCase()
-    )) throw new Error('Ya existe una cosecha con ese código de trazabilidad.')
   }
   if (config.value.entity === 'telemetry') {
     const lot = getRecord('lots', value.lotId)
@@ -849,10 +795,6 @@ function validateRelations() {
     if (editing.value === auth.currentUser?.id && value.active === false) {
       throw new Error('No puedes desactivar tu propia cuenta.')
     }
-  }
-  if (config.value.entity === 'users' && Array.isArray(value.farms)) {
-    if (new Set(value.farms).size !== value.farms.length) throw new Error('No repitas un predio en las asignaciones del usuario.')
-    if (value.farms.some((farmId) => !getRecord('farms', farmId))) throw new Error('Selecciona únicamente predios existentes.')
   }
   if (config.value.entity === 'lots') {
     const farm = getRecord('farms', value.farmId)
@@ -881,28 +823,8 @@ async function submitForm() {
   try {
     validateRelations()
     const value = { ...form.value }
-    for (const field of config.value.fields.filter((item) => item.visibleWhen && !isFieldVisible(item, value))) {
-      value[field.key] = field.multiple ? [] : ''
-    }
-    for (const field of visibleFormFields.value.filter((item) => item.type === 'number')) {
+    for (const field of config.value.fields.filter((item) => item.type === 'number')) {
       if (value[field.key] !== '' && value[field.key] !== null && value[field.key] !== undefined) value[field.key] = Number(String(value[field.key]).replace(',', '.'))
-    }
-    if (Array.isArray(value.applications)) {
-      value.applications = value.applications.map((application) => ({
-        ...application,
-        quantity: application.quantity === '' ? '' : Number(String(application.quantity).replace(',', '.')),
-        dose: application.dose === '' ? '' : Number(String(application.dose).replace(',', '.')),
-        ...(application.preharvestIntervalDays !== '' ? { preharvestIntervalDays: Number(application.preharvestIntervalDays) } : {}),
-        ...(application.reentryIntervalDays !== '' ? { reentryIntervalDays: Number(application.reentryIntervalDays) } : {})
-      }))
-    }
-    if (config.value.entity === 'activities') {
-      value.inputIds = [...new Set([...(value.inputIds ?? []), ...(value.applications ?? []).map((application) => application.inputId).filter(Boolean)])]
-    }
-    if (Array.isArray(value.trainingRecords)) {
-      value.trainingRecords = value.trainingRecords.filter((training) =>
-        [training.title, training.date, training.provider].some((item) => String(item ?? '').trim())
-      )
     }
     if (config.value.entity === 'telemetry') value.simulated = true
     if (config.value.entity === 'crops') {
@@ -922,11 +844,6 @@ async function submitForm() {
       }
       saved = saveRecord('users', { ...value, id: editing.value })
     } else if (config.value.entity === 'users') {
-      if (value.role !== 'Operario') {
-        value.eppStatus = ''
-        value.eppDeliveredAt = ''
-        value.trainingRecords = []
-      }
       saved = editing.value
         ? await updateUser(editing.value, value)
         : await createUser(value)
@@ -1297,7 +1214,7 @@ watch(() => [route.name, route.params.farmId, route.query.cycle], () => {
         </template>
         <template #body-cell-actions="props">
           <q-td :props="props" class="action-cell">
-            <template v-if="config.entity === 'notifications' && canManageNotificationActions(auth.currentUser)">
+            <template v-if="config.entity === 'notifications'">
               <q-btn flat round dense icon="done" color="primary" aria-label="Marcar como leída" :disable="!isUnreadNotification(props.row)" @click="markNotificationReadInList(props.row)"><q-tooltip>Marcar como leída</q-tooltip></q-btn>
               <q-btn v-if="isArchivedNotification(props.row)" flat round dense icon="unarchive" color="primary" aria-label="Desarchivar notificación" @click="unarchiveNotificationInList(props.row)"><q-tooltip>Desarchivar</q-tooltip></q-btn>
               <q-btn v-else flat round dense icon="archive" color="primary" aria-label="Archivar notificación" @click="archiveNotificationInList(props.row)"><q-tooltip>Archivar</q-tooltip></q-btn>
@@ -1356,7 +1273,7 @@ watch(() => [route.name, route.params.farmId, route.query.cycle], () => {
         </template>
       </q-table>
       <div v-if="filteredRows.length" class="row q-col-gutter-md record-card-grid" :class="{ 'record-card-grid-always': useVisualCards }" aria-label="Registros">
-        <div v-for="row in filteredRows" :key="row.id" :class="['lots', 'inputs', 'crops'].includes(config.entity) ? 'col-12 col-md-6 col-lg-4' : 'col-12 col-sm-6 col-md-4 col-lg-3'">
+        <div v-for="row in filteredRows" :key="row.id" :class="config.entity === 'lots' ? 'col-12 col-sm-6 col-md-4 col-lg-4' : 'col-12 col-sm-6 col-md-4 col-lg-3'">
           <q-card flat bordered class="record-mobile-card" :class="{ 'farm-compact-card': config.entity === 'farms', 'lot-compact-card': config.entity === 'lots' }">
             <template v-if="config.entity === 'farms'">
               <q-card-section class="compact-card-heading">
@@ -1561,49 +1478,42 @@ watch(() => [route.name, route.params.farmId, route.query.cycle], () => {
       <q-card class="record-dialog">
         <q-card-section class="dialog-heading"><div><h2>{{ editing ? 'Editar' : 'Nuevo' }} {{ config.singular }}</h2><p>Completa la información del registro.</p></div><q-btn v-close-popup flat round dense icon="close" /></q-card-section>
         <q-separator />
-        <q-form ref="formRef" class="record-dialog-form" greedy novalidate @submit.prevent="submitForm">
-          <q-card-section class="dialog-body">
+        <q-card-section class="dialog-body">
+          <q-form ref="formRef" class="record-form" greedy novalidate @submit.prevent="submitForm">
             <q-stepper v-if="config.entity === 'activities'" v-model="activityStep" flat animated :header-nav="false" class="activity-stepper">
               <q-step v-for="step in activityFieldGroups" :key="step.name" :name="step.name" :title="step.title" :caption="step.caption" :icon="step.name === 1 ? 'landscape' : step.name === 2 ? 'event_note' : 'person'">
                 <div class="activity-step-fields">
                   <div v-for="field in activityFieldsForStep(step.name)" :key="field.key" class="form-field">
-                    <label :for="`field-${field.key}`">{{ field.label }}<span v-if="field.required"> *</span><span v-else class="optional-label">Opcional</span></label>
+                    <label :for="`field-${field.key}`">{{ field.label }}<span v-if="field.required"> *</span></label>
                     <RecordFormField v-model="form[field.key]" :field="field" :options="fieldOptions(field)" :extra-rules="field.key === 'email' ? [userEmailRule] : []" :disabled="field.key === 'lotId' && !form.farmId" />
                   </div>
+                </div>
+                <div class="dialog-actions activity-step-actions">
+                  <q-btn v-if="step.name > 1" flat no-caps label="Anterior" @click="activityStep -= 1" />
+                  <q-space />
+                  <q-btn v-if="step.name < activityFieldGroups.length" unelevated color="primary" no-caps label="Continuar" icon-right="arrow_forward" @click="advanceActivityStep" />
+                  <q-btn v-else type="submit" color="primary" unelevated no-caps label="Guardar registro" />
                 </div>
               </q-step>
             </q-stepper>
             <template v-else>
-              <div class="record-form-sections">
-                <section v-for="section in formSections" :key="section.title" class="record-form-section">
-                  <div class="record-form-section-heading"><h3>{{ section.title }}</h3></div>
-                  <div class="record-form">
-                    <div v-for="field in section.fields" :key="field.key" class="form-field">
-                      <label :for="`field-${field.key}`">{{ field.label }}<span v-if="field.required"> *</span><span v-else class="optional-label">Opcional</span></label>
-                      <RecordFormField v-model="form[field.key]" :field="field" :options="fieldOptions(field)" :extra-rules="field.key === 'email' ? [userEmailRule] : []" :disabled="(field.key === 'lotId' && !form.farmId) || (field.key === 'farmId' && localUserManagement && editing === auth.currentUser?.id)" />
-                      <div v-if="field.key === 'area' && lotAreaGuidance" class="area-guidance" :class="{ 'area-guidance-over': lotAreaGuidance.exceedsAvailable }">
-                        <div class="area-guidance-heading">
-                          <span>{{ formatArea(form.area || 0) }} HA del predio</span>
-                          <strong>{{ formatArea(lotAreaGuidance.percentage) }}%</strong>
-                        </div>
-                        <q-linear-progress rounded size="8px" :value="lotAreaGuidance.progress" color="primary" track-color="white" />
-                        <span>Disponible para nuevos lotes: {{ formatArea(lotAreaGuidance.availableArea) }} HA</span>
-                        <span v-if="lotAreaGuidance.exceedsAvailable" class="area-guidance-warning">El área ingresada supera el área disponible de este predio.</span>
-                      </div>
-                    </div>
+              <div v-for="field in formFields.filter(f => f.key !== 'otherCategory' || form.category === 'Otro')" :key="field.key" class="form-field">
+                <label :for="`field-${field.key}`">{{ field.label }}<span v-if="field.required"> *</span></label>
+                <RecordFormField v-model="form[field.key]" :field="field" :options="fieldOptions(field)" :extra-rules="field.key === 'email' ? [userEmailRule] : []" :disabled="(field.key === 'lotId' && !form.farmId) || (field.key === 'farmId' && localUserManagement && editing === auth.currentUser?.id)" />
+                <div v-if="field.key === 'area' && lotAreaGuidance" class="area-guidance" :class="{ 'area-guidance-over': lotAreaGuidance.exceedsAvailable }">
+                  <div class="area-guidance-heading">
+                    <span>{{ formatArea(form.area || 0) }} HA del predio</span>
+                    <strong>{{ formatArea(lotAreaGuidance.percentage) }}%</strong>
                   </div>
-                </section>
+                  <q-linear-progress rounded size="8px" :value="lotAreaGuidance.progress" color="primary" track-color="white" />
+                  <span>Disponible para nuevos lotes: {{ formatArea(lotAreaGuidance.availableArea) }} HA</span>
+                  <span v-if="lotAreaGuidance.exceedsAvailable" class="area-guidance-warning">El área ingresada supera el área disponible de este predio.</span>
+                </div>
               </div>
+              <div class="dialog-actions"><q-btn v-close-popup flat no-caps label="Cancelar" /><q-btn type="submit" color="primary" unelevated no-caps label="Guardar registro" /></div>
             </template>
-          </q-card-section>
-          <div class="dialog-actions">
-            <q-btn v-if="config.entity === 'activities' && activityStep > 1" flat no-caps label="Anterior" @click="activityStep -= 1" />
-            <q-btn v-close-popup flat no-caps label="Cancelar" />
-            <q-space />
-            <q-btn v-if="config.entity === 'activities' && activityStep < activityFieldGroups.length" unelevated color="primary" no-caps label="Continuar" icon-right="arrow_forward" @click="advanceActivityStep" />
-            <q-btn v-else type="submit" color="primary" unelevated no-caps label="Guardar registro" />
-          </div>
-        </q-form>
+          </q-form>
+        </q-card-section>
       </q-card>
     </q-dialog>
 

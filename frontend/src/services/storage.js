@@ -12,14 +12,14 @@ const revision = ref(0)
 // Datos iniciales de demostración cargados la primera vez que se abre la aplicación
 const demoData = {
   users: [
-    { id: 'user-admin', name: 'Laura Mendoza', email: 'admin@agrogestion.demo', role: 'ADMIN_PRODUCTOR', farms: ['farm-1', 'farm-2'], active: true },
-    { id: 'user-supervisor', name: 'Carlos Ríos', email: 'agronomo@agrogestion.demo', role: 'TECNICO_AGRONOMO', farms: ['farm-1', 'farm-2'], active: true },
-    { id: 'user-agronomist', name: 'María Torres', email: 'maria@agrogestion.demo', role: 'TECNICO_AGRONOMO', farms: ['farm-1'], active: true },
-    { id: 'user-operator', name: 'José Pérez', email: 'operario@agrogestion.demo', role: 'OPERARIO_CAMPO', farms: ['farm-1'], active: true }
+    { id: 'user-admin', name: 'Laura Mendoza', email: 'admin@agrogestion.demo', role: 'Admin', farms: ['farm-1', 'farm-2'], active: true },
+    { id: 'user-supervisor', name: 'Carlos Ríos', email: 'superadmin@agrogestion.demo', role: 'SuperAdmin', farms: ['farm-1', 'farm-2'], active: true },
+    { id: 'user-agronomist', name: 'María Torres', email: 'maria@agrogestion.demo', role: 'Operario', farms: ['farm-1'], active: true },
+    { id: 'user-operator', name: 'José Pérez', email: 'operario@agrogestion.demo', role: 'Operario', farms: ['farm-1'], active: true }
   ],
   farms: [
-    { id: 'farm-1', name: 'El Robledal', municipality: 'San Gil', department: 'Santander', area: 24, owner: 'user-admin', status: 'Activo' },
-    { id: 'farm-2', name: 'La Esperanza', municipality: 'Barichara', department: 'Santander', area: 18, owner: 'user-admin', status: 'Activo' }
+    { id: 'farm-1', name: 'El Robledal', municipality: 'Rionegro', department: 'Antioquia', area: 24, owner: 'user-admin', status: 'Activo' },
+    { id: 'farm-2', name: 'La Esperanza', municipality: 'La Ceja', department: 'Antioquia', area: 18, owner: 'user-admin', status: 'Activo' }
   ],
   lots: [
     { id: 'lot-1', name: 'Lote Norte', farmId: 'farm-1', area: 8, soilType: 'Franco', responsible: 'user-agronomist', status: 'Activo' },
@@ -199,7 +199,7 @@ export function removeRecord(entity, id) {
 export function getDemoAccounts() {
   return [
     { username: 'admin', email: 'admin@agrogestion.demo', password: 'Agro2026!', userId: 'user-admin' },
-    { username: 'agronomo', email: 'agronomo@agrogestion.demo', password: 'Agro2026!', userId: 'user-supervisor' },
+    { username: 'superadmin', email: 'superadmin@agrogestion.demo', password: 'Agro2026!', userId: 'user-supervisor' },
     { username: 'operario', email: 'operario@agrogestion.demo', password: 'Agro2026!', userId: 'user-operator' }
   ]
 }
