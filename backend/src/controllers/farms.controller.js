@@ -6,8 +6,8 @@ import { sendSuccess, sendCreated } from '../shared/http/response.js';
  */
 export const createFarm = async (req, res, next) => {
   try {
-    const { nombre, ubicacion, latitud, longitud, area_m2, estado, responsable } = req.body;
-    const farm = await farmsService.createFarm({ nombre, ubicacion, latitud, longitud, area_m2, estado, responsable });
+    const { nombre, ubicacion, latitud, longitud, area_m2, estado } = req.body;
+    const farm = await farmsService.createFarm({ nombre, ubicacion, latitud, longitud, area_m2, estado });
     return sendCreated(res, farm, 'Predio creado exitosamente');
   } catch (error) {
     next(error);
@@ -46,8 +46,8 @@ export const getFarmById = async (req, res, next) => {
 export const updateFarm = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { nombre, ubicacion, latitud, longitud, area_m2, estado, responsable } = req.body;
-    const farm = await farmsService.updateFarm(id, { nombre, ubicacion, latitud, longitud, area_m2, estado, responsable });
+    const { nombre, ubicacion, latitud, longitud, area_m2, estado } = req.body;
+    const farm = await farmsService.updateFarm(id, { nombre, ubicacion, latitud, longitud, area_m2, estado });
     return sendSuccess(res, farm, 'Predio actualizado exitosamente');
   } catch (error) {
     next(error);

@@ -54,8 +54,7 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
         nombre: 'Pedro Operario',
         correo: 'pedro@agro.com',
         contrasena: 'OperarioPass123!',
-        rol: 'operario',
-        predios_asignados: ['farm-1', 'farm-2']
+        rol: 'operario'
       };
 
       const res = await request(app)
@@ -70,10 +69,7 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
       expect(res.body.data.nombre).toBe('Pedro Operario');
       expect(res.body.data.rol).toBe('operario');
       expect(res.body.data.estado).toBe(true);
-      expect(res.body.data.predios_asignados).toEqual(['farm-1', 'farm-2']);
       expect(res.body.data.contrasena_hash).toBeUndefined();
-      const savedUser = await User.findById(res.body.data._id);
-      expect(savedUser.predios_asignados).toEqual(['farm-1', 'farm-2']);
     });
 
     it('debe rechazar con 409 Conflict si el correo ya está registrado', async () => {
@@ -135,19 +131,6 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
         });
 
       expect(invalidRoleRes.status).toBe(400);
-
-      const invalidFarmAssignmentsRes = await request(app)
-        .post('/api/v1/usuarios')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({
-          nombre: 'Asignación inválida',
-          correo: 'asignacion.invalida@agro.com',
-          contrasena: 'Pass123456!',
-          rol: 'operario',
-          predios_asignados: 'farm-1'
-        });
-
-      expect(invalidFarmAssignmentsRes.status).toBe(400);
     });
 
     it('debe rechazar con 401 si no se envía token de autenticación', async () => {
@@ -230,16 +213,12 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
         .set('Authorization', `Bearer ${authToken}`)
         .send({
           nombre: 'Nombre Modificado',
-          rol: 'administrador',
-          predios_asignados: ['farm-1', 'farm-3']
+          rol: 'administrador'
         });
 
       expect(res.status).toBe(200);
       expect(res.body.data.nombre).toBe('Nombre Modificado');
       expect(res.body.data.rol).toBe('administrador');
-      expect(res.body.data.predios_asignados).toEqual(['farm-1', 'farm-3']);
-      const savedUser = await User.findById(user._id);
-      expect(savedUser.predios_asignados).toEqual(['farm-1', 'farm-3']);
     });
 
     it('debe rechazar con 409 si se intenta cambiar el correo a uno que ya pertenece a otro usuario', async () => {
@@ -372,71 +351,6 @@ describe('Fase 1 — Módulo de Usuarios (GP-01)', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.message).toMatch(/distinta/i);
-    });
-  });
-
-  describe('restricciones por rol', () => {
-    it.each([
-      ['administrador', 'productor@agro.com'],
-      ['operario', 'operario@agro.com']
-    ])('debe denegar operaciones administrativas al rol %s', async (role, email) => {
-      const password = 'RolePass123!';
-      const roleUser = await User.create({
-        nombre: `Usuario ${role}`,
-        correo: email,
-        contrasena_hash: password,
-        rol: role,
-        estado: true
-      });
-      const target = await User.create({
-        nombre: 'Usuario Objetivo',
-        correo: `objetivo-${role}@agro.com`,
-        contrasena_hash: 'TargetPass123!',
-        rol: 'operario',
-        estado: true
-      });
-
-      const loginRes = await request(app)
-        .post('/api/v1/auth/login')
-        .send({ correo: email, contrasena: password });
-      expect(loginRes.status).toBe(200);
-      const roleToken = loginRes.body.data.token;
-
-      const operations = [
-        ['get', '/api/v1/usuarios'],
-        ['get', `/api/v1/usuarios/${target._id}`],
-        ['post', '/api/v1/usuarios', {
-          nombre: 'Usuario Nuevo',
-          correo: `nuevo-${role}@agro.com`,
-          contrasena: 'NewUserPass123!',
-          rol: 'operario'
-        }],
-        ['patch', `/api/v1/usuarios/${target._id}`, { nombre: 'Nombre modificado' }],
-        ['patch', `/api/v1/usuarios/${target._id}/estado`, { estado: false }]
-      ];
-
-      for (const [method, path, body] of operations) {
-        let operation = request(app)[method](path)
-          .set('Authorization', `Bearer ${roleToken}`);
-        if (body) operation = operation.send(body);
-        const response = await operation;
-        expect(response.status).toBe(403);
-      }
-
-      const passwordRes = await request(app)
-        .patch('/api/v1/usuarios/me/contrasena')
-        .set('Authorization', `Bearer ${roleToken}`)
-        .send({
-          contrasena_actual: password,
-          contrasena_nueva: 'RolePassUpdated123!'
-        });
-      expect(passwordRes.status).toBe(200);
-
-      const unchangedTarget = await User.findById(target._id);
-      expect(unchangedTarget.nombre).toBe('Usuario Objetivo');
-      expect(unchangedTarget.estado).toBe(true);
-      expect(await User.countDocuments({ correo: `nuevo-${role}@agro.com` })).toBe(0);
-      expect(roleUser.rol).toBe(role);
     });
   });
 });

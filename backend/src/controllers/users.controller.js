@@ -6,8 +6,8 @@ import { sendSuccess, sendCreated } from '../shared/http/response.js';
  */
 export const createUser = async (req, res, next) => {
   try {
-    const { nombre, correo, contrasena, rol, estado, predios_asignados } = req.body;
-    const user = await usersService.createUser({ nombre, correo, contrasena, rol, estado, predios_asignados });
+    const { nombre, correo, contrasena, rol, estado } = req.body;
+    const user = await usersService.createUser({ nombre, correo, contrasena, rol, estado });
     return sendCreated(res, user, 'Usuario creado exitosamente');
   } catch (error) {
     next(error);
@@ -46,8 +46,8 @@ export const getUserById = async (req, res, next) => {
 export const updateUser = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { nombre, correo, rol, estado, predios_asignados } = req.body;
-    const user = await usersService.updateUser(id, { nombre, correo, rol, estado, predios_asignados });
+    const { nombre, correo, rol, estado } = req.body;
+    const user = await usersService.updateUser(id, { nombre, correo, rol, estado });
     return sendSuccess(res, user, 'Usuario actualizado exitosamente');
   } catch (error) {
     next(error);

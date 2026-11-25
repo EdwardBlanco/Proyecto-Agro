@@ -12,7 +12,7 @@ import { User } from '../models/User.model.js';
  * @param {boolean} [userData.estado=true] - Estado activo/inactivo inicial
  * @returns {Promise<object>} Usuario creado en formato JSON
  */
-export const createUser = async ({ nombre, correo, contrasena, rol, estado, predios_asignados = [] }) => {
+export const createUser = async ({ nombre, correo, contrasena, rol, estado }) => {
   const normalizedEmail = correo.toLowerCase().trim();
 
   // Validar si el correo ya existe antes de crear el documento
@@ -26,7 +26,6 @@ export const createUser = async ({ nombre, correo, contrasena, rol, estado, pred
     correo: normalizedEmail,
     contrasena_hash: contrasena,
     rol: rol || 'operario',
-    predios_asignados,
     estado: estado !== undefined ? estado : true
   });
 
@@ -132,10 +131,6 @@ export const updateUser = async (id, data) => {
 
   if (data.estado !== undefined) {
     user.estado = data.estado;
-  }
-
-  if (data.predios_asignados !== undefined) {
-    user.predios_asignados = data.predios_asignados;
   }
 
   await user.save();

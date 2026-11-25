@@ -34,17 +34,7 @@ export const createUserValidator = [
   body('estado')
     .optional()
     .isBoolean()
-    .withMessage('El campo "estado" debe ser un booleano (true o false)'),
-  body('predios_asignados')
-    .optional()
-    .isArray()
-    .withMessage('El campo "predios_asignados" debe ser una lista'),
-  body('predios_asignados.*')
-    .optional()
-    .isString()
-    .withMessage('Cada predio asignado debe tener un identificador de texto')
-    .isLength({ min: 1, max: 100 })
-    .withMessage('El identificador del predio no puede exceder 100 caracteres')
+    .withMessage('El campo "estado" debe ser un booleano (true o false)')
 ];
 
 /**
@@ -74,17 +64,7 @@ export const updateUserValidator = [
   body('estado')
     .optional()
     .isBoolean()
-    .withMessage('El campo "estado" debe ser un booleano (true o false)'),
-  body('predios_asignados')
-    .optional()
-    .isArray()
-    .withMessage('El campo "predios_asignados" debe ser una lista'),
-  body('predios_asignados.*')
-    .optional()
-    .isString()
-    .withMessage('Cada predio asignado debe tener un identificador de texto')
-    .isLength({ min: 1, max: 100 })
-    .withMessage('El identificador del predio no puede exceder 100 caracteres')
+    .withMessage('El campo "estado" debe ser un booleano (true o false)')
 ];
 
 /**

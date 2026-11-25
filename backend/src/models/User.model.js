@@ -43,10 +43,6 @@ const userSchema = new mongoose.Schema(
       },
       default: 'operario'
     },
-    predios_asignados: {
-      type: [{ type: String, trim: true }],
-      default: []
-    },
     estado: {
       type: Boolean,
       default: true

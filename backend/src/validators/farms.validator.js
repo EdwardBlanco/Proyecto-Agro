@@ -18,9 +18,10 @@ export const createFarmValidator = [
     .isLength({ max: 200 })
     .withMessage('El campo "ubicacion" no puede superar 200 caracteres'),
   body('latitud')
-    .optional()
+    .exists({ checkNull: false })
+    .withMessage('El campo "latitud" es obligatorio y debe ser un número válido')
     .isFloat()
-    .withMessage('El campo "latitud" debe ser un número válido')
+    .withMessage('El campo "latitud" es obligatorio y debe ser un número válido')
     .custom((val) => {
       const num = Number(val);
       if (num < -90 || num > 90) {
@@ -29,9 +30,10 @@ export const createFarmValidator = [
       return true;
     }),
   body('longitud')
-    .optional()
+    .exists({ checkNull: false })
+    .withMessage('El campo "longitud" es obligatorio y debe ser un número válido')
     .isFloat()
-    .withMessage('El campo "longitud" debe ser un número válido')
+    .withMessage('El campo "longitud" es obligatorio y debe ser un número válido')
     .custom((val) => {
       const num = Number(val);
       if (num < -180 || num > 180) {
@@ -54,13 +56,7 @@ export const createFarmValidator = [
   body('estado')
     .optional()
     .isBoolean()
-    .withMessage('El campo "estado" debe ser un booleano (true o false)'),
-  body('responsable')
-    .optional()
-    .isString()
-    .withMessage('El campo "responsable" debe ser texto')
-    .isLength({ max: 100 })
-    .withMessage('El campo "responsable" no puede superar 100 caracteres')
+    .withMessage('El campo "estado" debe ser un booleano (true o false)')
 ];
 
 /**
@@ -117,13 +113,7 @@ export const updateFarmValidator = [
   body('estado')
     .optional()
     .isBoolean()
-    .withMessage('El campo "estado" debe ser un booleano (true o false)'),
-  body('responsable')
-    .optional()
-    .isString()
-    .withMessage('El campo "responsable" debe ser texto')
-    .isLength({ max: 100 })
-    .withMessage('El campo "responsable" no puede superar 100 caracteres')
+    .withMessage('El campo "estado" debe ser un booleano (true o false)')
 ];
 
 /**

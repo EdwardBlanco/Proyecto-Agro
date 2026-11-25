@@ -20,18 +20,15 @@ const farmSchema = new mongoose.Schema(
     },
     latitud: {
       type: Number,
+      required: [true, 'La latitud es obligatoria'],
       min: [-90, 'La latitud no puede ser menor a -90'],
       max: [90, 'La latitud no puede ser mayor a 90']
     },
     longitud: {
       type: Number,
+      required: [true, 'La longitud es obligatoria'],
       min: [-180, 'La longitud no puede ser menor a -180'],
       max: [180, 'La longitud no puede ser mayor a 180']
-    },
-    responsable: {
-      type: String,
-      trim: true,
-      maxlength: [100, 'El responsable no puede exceder 100 caracteres']
     },
     area_m2: {
       type: Number,
