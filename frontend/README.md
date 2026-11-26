@@ -21,6 +21,25 @@ npm run preview
 
 La aplicación usa Vue 3, Vite, Vue Router, Pinia y Quasar. El título de la pestaña puede configurarse mediante `VITE_APP_NAME`; la API usa `VITE_API_URL` y, si no se define, `/api/v1`. El login de las tres cuentas demo consulta el backend configurado. Las cuentas creadas por un Administrador se autentican localmente desde `localStorage`.
 
+## Configuración y contrato del clima
+
+El repositorio no define ni confirma una ruta de clima existente en el backend. Para habilitar la cápsula, el backend debe implementar `GET {VITE_API_URL}/weather`; la ruta se puede cambiar con `VITE_WEATHER_ENDPOINT` sin modificar el código:
+
+```env
+VITE_API_URL=/api/v1
+VITE_WEATHER_ENDPOINT=/weather
+```
+
+Con permiso de geolocalización, el frontend envía `lat` y `lon` como query parameters. Si el usuario deniega el permiso, la geolocalización no está disponible o vence su tiempo de espera, se llama la misma ruta sin parámetros para que el backend resuelva la ubicación usando la IP del cliente. El frontend no consulta servicios públicos de clima ni de geolocalización por IP.
+
+La respuesta debe ser JSON con esta forma y tipos:
+
+```json
+{ "temperature": 18.5, "weatherCode": 3, "zoneName": "San Gil, Santander" }
+```
+
+`weatherCode` usa los códigos WMO de Open-Meteo. El backend debe gestionar el proveedor de clima y las consultas por IP; el frontend reutiliza el cliente API existente, incluida la sesión/token, aplica un timeout de 8 segundos y conserva respuestas válidas en memoria durante 12 minutos. Si el endpoint tiene otra ruta, configura `VITE_WEATHER_ENDPOINT` con esa ruta relativa a `VITE_API_URL`. Reinicia Vite después de cambiar estas variables.
+
 ## Cuentas de demostración
 
 Contraseña compartida: `Agro2026!`
@@ -51,7 +70,7 @@ Son cuentas y credenciales ficticias para demostración; no se deben usar en pro
 - Historial completo de notificaciones con etiquetas de archivado y acciones visibles para marcar como leída, archivar, desarchivar o eliminar. La eliminación se confirma en un diálogo; los cambios se guardan localmente.
 - Tablas con encabezados, acciones y paginación en español; en pantallas pequeñas las vistas usan tarjetas responsivas y las tablas mantienen desplazamiento horizontal cuando se requiere.
 - Telemetría de demostración con filtros, indicadores, gráficos y fechas legibles. Las lecturas no provienen de sensores reales ni incluyen umbrales de alerta.
-- Cápsula del clima preparada con geolocalización del navegador, sin llamadas del frontend a Open-Meteo. El stub `src/services/weather.js` espera que el backend exponga temperatura, código de clima y nombre de zona; al integrar, reemplaza ahí el `null` por la llamada al servicio backend.
+- Cápsula del clima conectada al backend, con geolocalización, fallback por IP, descripción e icono WMO, estados de carga/error y reintento.
 - Cosechas con indicadores, producción convertida a kilogramos para unidades compatibles, rendimiento solo cuando el área está disponible y gráficos de producción/calidad.
 - Semilleros con datos de siembra y germinación; los porcentajes se muestran solo si están guardados o se pueden calcular con los registros existentes.
 - Cuando falta un dato se muestra «Sin datos registrados»; no se agregan valores técnicos, estados ni métricas que el sistema no pueda obtener.
@@ -71,12 +90,12 @@ Los lotes se consultan y administran desde su predio; no hay una vista global de
 - `src/services/dates.js`: formato de fecha y hora para visualización.
 - `src/services/permissions.js`: reglas de visibilidad y escritura de la interfaz por rol.
 - `src/services/production.js`: conversión de producción a kilogramos para las unidades compatibles.
-- `src/services/weather.js`: punto de integración frontend del clima; actualmente devuelve `null`.
+- `src/services/weather.js`: cliente del clima, normalización, caché temporal y mapeo de códigos WMO.
 - `src/stores/auth.js`: estado de sesión local.
 - `src/css`: estilos del sistema y variables de Quasar.
 
 ## Persistencia y límites
 
-Los registros, usuarios locales, datos de imágenes previas y sesión se conservan en el almacenamiento local del navegador. Se pueden perder al limpiar los datos del sitio y no se sincronizan entre dispositivos. Las contraseñas de usuarios locales se guardan sin cifrado: no usar cuentas reales. Las lecturas de telemetría y avisos precargados son datos de demostración. El backend debe integrar Open-Meteo y exponer los datos esperados por `src/services/weather.js`; el frontend no contacta Open-Meteo. La recuperación de contraseña, los sensores reales, la sincronización y la autorización confiable requieren servicios externos.
+Los registros, usuarios locales, datos de imágenes previas y sesión se conservan en el almacenamiento local del navegador. Se pueden perder al limpiar los datos del sitio y no se sincronizan entre dispositivos. Las contraseñas de usuarios locales se guardan sin cifrado: no usar cuentas reales. Las lecturas de telemetría y avisos precargados son datos de demostración. Para el clima, el backend externo debe implementar el contrato descrito arriba; el frontend no contacta Open-Meteo. La recuperación de contraseña, los sensores reales, la sincronización y la autorización confiable requieren servicios externos.
 
 El alcance del frontend es demostrativo: las cuentas creadas por Administrador y los cambios de notificaciones se guardan localmente; la telemetría es simulada y no hay sincronización entre dispositivos. El catálogo actual de cultivos no contiene nombre científico, tiempo de desarrollo, temperatura, requerimientos de agua/suelo ni recomendaciones; los usuarios tampoco guardan último acceso y los registros de insumos no incluyen stock mínimo, vencimiento o ubicación de almacenamiento. Este repositorio de frontend no incluye el backend ni su documentación; el backend se ejecuta y configura por separado.

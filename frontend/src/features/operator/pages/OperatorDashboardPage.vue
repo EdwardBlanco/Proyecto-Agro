@@ -53,7 +53,7 @@ const inProgressTasks = computed(() => assignedTasks.value.filter((task) => ['En
 const completedTasks = computed(() => assignedTasks.value.filter((task) => task.status === 'Completada'))
 const pendingNotices = computed(() => getRecords('notifications')
   .filter((notice) => {
-    if (notice.deletedAt || notice.archivedAt || notice.status !== 'Pendiente') return false
+    if (notice.deletedAt || notice.status !== 'Pendiente') return false
     const lot = getRecord('lots', notice.lotId)
     return Boolean(lot && farmIds.value.includes(lot.farmId))
   }))
@@ -131,14 +131,12 @@ onBeforeUnmount(() => {
     <section class="operator-overview-grid">
       <q-card flat bordered class="operator-panel">
         <q-card-section class="operator-panel-heading">
-          <div><h2>Mis predios</h2><p>Predios asociados a tu sesión</p></div>
-          <q-icon name="landscape" />
+          <div><h2><q-icon name="landscape" />Mis predios</h2><p>Predios asociados a tu sesión</p></div>
         </q-card-section>
         <q-separator />
         <q-list v-if="farms.length" separator>
           <q-item v-for="farm in farms" :key="farm.id">
-            <q-item-section avatar><q-avatar class="operator-farm-icon" icon="landscape" /></q-item-section>
-            <q-item-section><q-item-label>{{ farm.name }}</q-item-label><q-item-label caption>{{ farm.municipality }}<template v-if="farm.department">, {{ farm.department }}</template></q-item-label></q-item-section>
+            <q-item-section><q-item-label><q-icon class="decorative-inline-icon" name="landscape" />{{ farm.name }}</q-item-label><q-item-label caption>{{ farm.municipality }}<template v-if="farm.department">, {{ farm.department }}</template></q-item-label></q-item-section>
             <q-item-section side><q-btn flat round dense icon="arrow_forward" aria-label="Consultar predio" :to="{ name: 'farms' }" /></q-item-section>
           </q-item>
         </q-list>
@@ -147,8 +145,7 @@ onBeforeUnmount(() => {
 
       <q-card flat bordered class="operator-panel operator-telemetry-summary">
         <q-card-section class="operator-panel-heading">
-          <div><h2>Condiciones de telemetría</h2><p>Consulta de sensores en tus predios</p></div>
-          <q-icon name="sensors" />
+          <div><h2><q-icon name="sensors" />Condiciones de telemetría</h2><p>Consulta de sensores en tus predios</p></div>
         </q-card-section>
         <q-separator />
         <div v-if="telemetryReadings.length" class="operator-telemetry-readings">
@@ -159,8 +156,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div v-else class="operator-data-unavailable">
-          <q-icon name="sensors_off" />
-          <strong>Sin lecturas registradas</strong>
+          <strong><q-icon name="sensors_off" />Sin lecturas registradas</strong>
           <span>No hay mediciones disponibles para los predios asociados a tu sesión.</span>
         </div>
         <div class="operator-telemetry-summary-action">
@@ -183,40 +179,39 @@ onBeforeUnmount(() => {
             { key: 'completed', title: 'Completadas', icon: 'task_alt', tasks: completedTasks, className: 'operator-task-complete' }
           ]" :key="group.key" v-show="group.tasks.length" class="operator-task-group">
             <h3><q-icon :name="group.icon" />{{ group.title }}<span>{{ group.tasks.length }}</span></h3>
-            <article v-for="task in group.tasks" :key="task.id" class="operator-task-card" :class="group.className">
-              <div class="operator-task-title">
-                <div><small>{{ task.kind }}<template v-if="task.crop?.name"> · {{ task.crop.name }}</template></small><h4>{{ task.type }}</h4></div>
-                <StatusBadge :status="task.status" />
-              </div>
-              <p v-if="task.description" class="operator-task-description">{{ task.description }}</p>
-              <div class="operator-task-meta">
-                <span v-if="task.farm?.name"><q-icon name="landscape" />{{ task.farm.name }}</span>
-                <span v-if="task.lot?.name"><q-icon name="grid_view" />{{ task.lot.name }}</span>
-                <span v-if="task.date"><q-icon name="event" />{{ task.date }}</span>
-                <span v-if="task.time"><q-icon name="schedule" />{{ formatTime(task.time) }}</span>
-                <span v-if="task.responsible"><q-icon name="person" />Responsable: {{ task.responsible }}</span>
-              </div>
-              <div v-if="task.notes" class="operator-task-notes"><strong>Observaciones:</strong> {{ task.notes }}</div>
-            </article>
+            <div class="operator-task-card-grid">
+              <article v-for="task in group.tasks" :key="task.id" class="operator-task-card" :class="group.className">
+                <div class="operator-task-title">
+                  <div><small>{{ task.kind }}<template v-if="task.crop?.name"> · {{ task.crop.name }}</template></small><h4>{{ task.type }}</h4></div>
+                  <StatusBadge :status="task.status" />
+                </div>
+                <p v-if="task.description" class="operator-task-description">{{ task.description }}</p>
+                <div class="operator-task-meta">
+                  <span v-if="task.farm?.name"><q-icon name="landscape" />{{ task.farm.name }}</span>
+                  <span v-if="task.lot?.name"><q-icon name="grid_view" />{{ task.lot.name }}</span>
+                  <span v-if="task.date"><q-icon name="event" />{{ task.date }}</span>
+                  <span v-if="task.time"><q-icon name="schedule" />{{ formatTime(task.time) }}</span>
+                  <span v-if="task.responsible"><q-icon name="person" />Responsable: {{ task.responsible }}</span>
+                </div>
+                <div v-if="task.notes" class="operator-task-notes"><strong>Observaciones:</strong> {{ task.notes }}</div>
+              </article>
+            </div>
           </section>
         </div>
         <div v-else class="operator-empty-state">
-          <q-icon name="event_available" />
-          <strong>No tienes actividades programadas para hoy</strong>
+          <strong><q-icon name="event_available" />No tienes actividades programadas para hoy</strong>
           <span>Cuando se asigne una actividad con tu usuario y la fecha de hoy, aparecerá aquí.</span>
         </div>
       </q-card>
 
       <q-card flat bordered class="operator-panel operator-notices-panel">
         <q-card-section class="operator-panel-heading">
-          <div><h2>Avisos de mis predios</h2><p>Avisos pendientes relacionados con tus lotes</p></div>
-          <q-icon name="notifications_active" />
+          <div><h2><q-icon name="notifications_active" />Avisos de mis predios</h2><p>Avisos pendientes relacionados con tus lotes</p></div>
         </q-card-section>
         <q-separator />
         <q-list v-if="pendingNotices.length" separator>
           <q-item v-for="notice in pendingNotices" :key="notice.id">
-            <q-item-section avatar><q-icon name="warning_amber" color="warning" /></q-item-section>
-            <q-item-section><q-item-label>{{ notice.title }}</q-item-label><q-item-label caption>{{ notice.message }}</q-item-label></q-item-section>
+            <q-item-section><q-item-label><q-icon class="decorative-inline-icon" name="warning_amber" />{{ notice.title }}</q-item-label><q-item-label caption>{{ notice.message }}</q-item-label></q-item>
           </q-item>
         </q-list>
         <div v-else class="operator-empty-inline">No hay avisos pendientes asociados a tus predios.</div>
@@ -230,10 +225,11 @@ onBeforeUnmount(() => {
 .operator-dashboard-page { max-width: 1500px; margin: 0 auto; padding: 28px 32px 48px; }
 .operator-welcome { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 22px; }
 .operator-eyebrow { display: flex; align-items: center; gap: 7px; color: var(--green-primary); font-size: 10px; font-weight: 700; letter-spacing: 1.1px; }
+.operator-eyebrow .q-icon { color: var(--green-muted); }
 .operator-welcome h1 { margin: 5px 0 2px; color: var(--green-dark); font-size: 27px; font-weight: 700; }
 .operator-welcome p { margin: 0; color: #647168; font-size: 13px; text-transform: capitalize; }
 .operator-welcome-actions { display: flex; flex-wrap: wrap; gap: 9px; }
-.operator-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; margin-bottom: 16px; }
+.operator-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 13px; margin-bottom: 16px; }
 .operator-summary-card { border-color: #e4e9e5; border-radius: 11px; box-shadow: 0 3px 12px rgb(18 61 41 / 5%); }
 .operator-summary-card .q-card__section { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 10px; padding: 15px 17px; }
 .operator-summary-card span { color: #5a685f; font-size: 11px; font-weight: 600; }
@@ -245,10 +241,9 @@ onBeforeUnmount(() => {
 .operator-overview-grid, .operator-work-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, .75fr); gap: 15px; margin-bottom: 16px; }
 .operator-panel { overflow: hidden; border-color: #e4e9e5; border-radius: 12px; box-shadow: 0 3px 12px rgb(18 61 41 / 5%); }
 .operator-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 17px 19px; }
-.operator-panel-heading h2 { margin: 0; color: #26372d; font-size: 15px; font-weight: 700; }
+.operator-panel-heading h2 { display: flex; align-items: center; gap: 8px; margin: 0; color: #26372d; font-size: 15px; font-weight: 700; }
 .operator-panel-heading p { margin: 3px 0 0; color: #79857d; font-size: 11px; }
-.operator-panel-heading > .q-icon { color: var(--green-primary); font-size: 22px; }
-.operator-farm-icon { background: #eaf5ec; color: #2e7d32; }
+.operator-panel-heading h2 .q-icon { color: var(--green-muted); font-size: 19px; }
 .operator-empty-inline { padding: 22px 19px; color: #68756c; font-size: 12px; }
 .operator-data-unavailable { display: flex; min-height: 146px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 6px; padding: 18px 22px; }
 .operator-data-unavailable > .q-icon { margin-bottom: 2px; color: #88958b; font-size: 26px; }
@@ -258,7 +253,7 @@ onBeforeUnmount(() => {
 .operator-telemetry-reading { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 12px; padding: 10px 0; border-bottom: 1px solid #edf0ed; }
 .operator-telemetry-reading:last-child { border-bottom: 0; }
 .operator-telemetry-reading span { display: flex; align-items: center; gap: 6px; color: #637067; font-size: 11px; }
-.operator-telemetry-reading span .q-icon { color: var(--green-primary); font-size: 15px; }
+.operator-telemetry-reading span .q-icon { color: var(--green-muted); font-size: 15px; }
 .operator-telemetry-reading strong { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: #2e6339; font-size: 15px; }
 .operator-telemetry-reading small { color: #89948c; font-size: 9px; }
 .operator-telemetry-summary-action { padding: 0 18px 10px; }
@@ -267,9 +262,10 @@ onBeforeUnmount(() => {
 .operator-task-groups { padding: 0 18px 17px; }
 .operator-task-group + .operator-task-group { margin-top: 12px; }
 .operator-task-group h3 { display: flex; align-items: center; gap: 7px; margin: 15px 0 9px; color: #46564b; font-size: 12px; }
-.operator-task-group h3 .q-icon { color: var(--green-primary); font-size: 17px; }
+.operator-task-group h3 .q-icon { color: var(--green-muted); font-size: 17px; }
 .operator-task-group h3 span { display: inline-flex; min-width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 50%; background: #eef3ef; color: #526056; font-size: 10px; }
-.operator-task-card { margin: 8px 0; padding: 13px 14px; border: 1px solid #e7ece8; border-left: 3px solid #96a39a; border-radius: 8px; background: #fff; }
+.operator-task-card-grid { display: grid; grid-auto-rows: 1fr; gap: 8px; }
+.operator-task-card { padding: 13px 14px; border: 1px solid #e7ece8; border-left: 3px solid #96a39a; border-radius: 8px; background: #fff; }
 .operator-task-pending { border-left-color: #d3923e; }
 .operator-task-progress { border-left-color: #4687b7; }
 .operator-task-complete { border-left-color: #3b8c4a; }
@@ -279,11 +275,11 @@ onBeforeUnmount(() => {
 .operator-task-description { margin: 10px 0; color: #536158; font-size: 11px; line-height: 1.5; }
 .operator-task-meta { display: flex; flex-wrap: wrap; gap: 7px 14px; color: #68756c; font-size: 10px; }
 .operator-task-meta span { display: inline-flex; align-items: center; gap: 4px; }
-.operator-task-meta .q-icon { color: #43834e; font-size: 14px; }
+.operator-task-meta .q-icon { color: var(--green-muted); font-size: 14px; }
 .operator-task-notes { margin-top: 9px; color: #657269; font-size: 10px; }
 .operator-empty-state { display: flex; min-height: 230px; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; color: #6c7970; text-align: center; }
-.operator-empty-state > .q-icon { color: #8da092; font-size: 34px; }
-.operator-empty-state strong { color: #34443a; font-size: 14px; }
+.operator-empty-state strong { display: flex; align-items: center; gap: 8px; color: #34443a; font-size: 14px; }
+.operator-empty-state strong .q-icon { color: var(--green-muted); font-size: 20px; }
 .operator-empty-state span { max-width: 360px; font-size: 11px; line-height: 1.5; }
 .operator-notice-footnote { padding: 10px 17px; border-top: 1px solid #edf0ed; color: #79857d; font-size: 10px; line-height: 1.4; }
 @media (max-width: 900px) {

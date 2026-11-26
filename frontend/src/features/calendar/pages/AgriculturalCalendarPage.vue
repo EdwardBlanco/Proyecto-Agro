@@ -13,7 +13,7 @@ const auth = useAuthStore()
 const now = new Date()
 const selectedMonth = ref(new Date(now.getFullYear(), now.getMonth(), 1))
 const viewMode = ref('calendar')
-const filters = ref({ type: '', cropId: '', farmId: '', lotId: '', status: '' })
+const filters = ref({ type: '', cropId: '', farmId: '', lotId: '', status: 'Todos' })
 const selectedEvent = ref(null)
 const selectedDay = ref('')
 const detailDialog = ref(false)
@@ -105,15 +105,24 @@ const filteredEvents = computed(() => allEvents.value.filter((event) => {
   if (filters.value.cropId && event.crop?.id !== filters.value.cropId) return false
   if (filters.value.farmId && event.farm?.id !== filters.value.farmId) return false
   if (filters.value.lotId && event.lot?.id !== filters.value.lotId) return false
-  if (filters.value.status && event.status !== filters.value.status) return false
+  if (filters.value.status !== 'Todos' && !eventStatusesByFilter[filters.value.status]?.includes(event.status)) return false
   return true
 }))
 
-const statusOptions = computed(() => [...new Set(filteredEvents.value
-  .map((event) => event.status)
-  .filter(hasValue))]
-  .sort((left, right) => left.localeCompare(right, 'es'))
-  .map((status) => ({ label: status, value: status })))
+const statusOptions = [
+  { label: 'Todos', value: 'Todos' },
+  { label: 'Programada', value: 'Programada' },
+  { label: 'En curso', value: 'En curso' },
+  { label: 'Completada', value: 'Completada' },
+  { label: 'Cancelada', value: 'Cancelada' }
+]
+
+const eventStatusesByFilter = {
+  Programada: ['Planeado', 'Pendiente'],
+  'En curso': ['En curso', 'En seguimiento'],
+  Completada: ['Finalizado', 'Completada'],
+  Cancelada: ['Suspendido', 'Cancelada']
+}
 
 const calendarDays = computed(() => {
   const year = selectedMonth.value.getFullYear()
@@ -212,7 +221,7 @@ function goToToday() {
 }
 
 function clearFilters() {
-  filters.value = { type: '', cropId: '', farmId: '', lotId: '', status: '' }
+  filters.value = { type: '', cropId: '', farmId: '', lotId: '', status: 'Todos' }
 }
 
 function manageEvent() {
@@ -266,7 +275,7 @@ function registerActivity() {
         <q-select v-model="filters.cropId" dense outlined clearable emit-value map-options label="Cultivo" :options="cropOptions" />
         <q-select v-model="filters.farmId" dense outlined clearable emit-value map-options label="Predio" :options="farmOptions" @update:model-value="filters.lotId = ''" />
         <q-select v-model="filters.lotId" dense outlined clearable emit-value map-options label="Lote" :options="lotOptions" />
-        <q-select v-model="filters.status" dense outlined clearable emit-value map-options label="Estado" :options="statusOptions" />
+        <q-select v-model="filters.status" dense outlined emit-value map-options label="Estado" :options="statusOptions" />
         <q-btn flat no-caps color="primary" icon="restart_alt" label="Limpiar" @click="clearFilters" />
       </div>
     </q-card>
@@ -324,9 +333,8 @@ function registerActivity() {
           @click="openEvent(event)"
         >
           <span class="agenda-date"><strong>{{ formatDate(event.date, { day: '2-digit' }) }}</strong><small>{{ formatDate(event.date, { month: 'short' }) }}</small></span>
-          <span class="agenda-event-icon"><q-icon :name="event.kind === 'cycle' ? 'spa' : event.kind === 'labor' ? 'task_alt' : 'warning_amber'" /></span>
           <span class="agenda-event-copy">
-            <strong>{{ event.title }}</strong>
+            <strong><q-icon class="agenda-event-icon" :name="event.kind === 'cycle' ? 'spa' : event.kind === 'labor' ? 'task_alt' : 'warning_amber'" />{{ event.title }}</strong>
             <small>{{ event.typeLabel }}<template v-if="event.crop?.name"> · {{ event.crop.name }}</template><template v-if="event.farm?.name"> · {{ event.farm.name }}</template><template v-if="event.lot?.name"> · {{ event.lot.name }}</template></small>
           </span>
           <StatusBadge v-if="event.status" :status="event.status" />
@@ -334,8 +342,7 @@ function registerActivity() {
         </button>
       </div>
       <div v-else class="calendar-empty-state">
-        <q-icon name="event_busy" />
-        <strong>No hay registros con estos filtros</strong>
+        <strong><q-icon name="event_busy" />No hay registros con estos filtros</strong>
         <span>{{ isOperator ? 'No tienes actividades asignadas para mostrar.' : 'Ajusta los filtros o registra una nueva actividad.' }}</span>
       </div>
     </q-card>
@@ -349,8 +356,7 @@ function registerActivity() {
         <q-separator />
         <q-list v-if="selectedDayEvents.length" separator>
           <q-item v-for="event in selectedDayEvents" :key="event.key" clickable @click="openEvent(event)">
-            <q-item-section avatar><q-icon :name="event.kind === 'cycle' ? 'spa' : event.kind === 'labor' ? 'task_alt' : 'warning_amber'" :class="`event-icon-${event.kind}`" /></q-item-section>
-            <q-item-section><q-item-label>{{ event.title }}</q-item-label><q-item-label caption>{{ event.typeLabel }} · {{ event.crop?.name || missingData }} · {{ event.lot?.name || missingData }}</q-item-label></q-item-section>
+            <q-item-section><q-item-label><q-icon class="decorative-inline-icon" :name="event.kind === 'cycle' ? 'spa' : event.kind === 'labor' ? 'task_alt' : 'warning_amber'" />{{ event.title }}</q-item-label><q-item-label caption>{{ event.typeLabel }} · {{ event.crop?.name || missingData }} · {{ event.lot?.name || missingData }}</q-item-label></q-item-section>
             <q-item-section side><StatusBadge v-if="event.status" :status="event.status" /></q-item-section>
           </q-item>
         </q-list>
@@ -362,8 +368,7 @@ function registerActivity() {
       <q-card v-if="selectedEvent" class="calendar-detail-dialog">
         <q-card-section class="calendar-detail-banner" :class="`calendar-detail-${selectedEvent.kind}`">
           <div class="calendar-detail-title">
-            <span class="calendar-detail-icon"><q-icon :name="selectedEvent.kind === 'cycle' ? 'spa' : selectedEvent.kind === 'labor' ? 'task_alt' : 'warning_amber'" /></span>
-            <div><small>{{ selectedEvent.typeLabel }}</small><h2>{{ selectedEvent.title }}</h2></div>
+            <div><small>{{ selectedEvent.typeLabel }}</small><h2><q-icon class="decorative-inline-icon" :name="selectedEvent.kind === 'cycle' ? 'spa' : selectedEvent.kind === 'labor' ? 'task_alt' : 'warning_amber'" />{{ selectedEvent.title }}</h2></div>
           </div>
           <q-btn flat round dense icon="close" v-close-popup aria-label="Cerrar detalle" />
         </q-card-section>
@@ -430,6 +435,7 @@ function registerActivity() {
 .agricultural-calendar-page { max-width: 1540px; margin: 0 auto; padding: 28px 32px 48px; }
 .calendar-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 22px; }
 .calendar-eyebrow { display: flex; align-items: center; gap: 7px; color: var(--green-primary); font-size: 10px; font-weight: 700; letter-spacing: 1.15px; }
+.calendar-eyebrow .q-icon { color: var(--green-muted); }
 .calendar-heading h1 { margin: 5px 0 2px; color: var(--green-dark); font-size: 27px; font-weight: 700; }
 .calendar-heading p { margin: 0; color: var(--muted); font-size: 13px; }
 .calendar-toolbar-card, .calendar-grid-card, .agenda-card { overflow: hidden; border-color: #e4e9e5; border-radius: 12px; box-shadow: 0 3px 14px rgb(18 61 41 / 5%); }
@@ -439,7 +445,6 @@ function registerActivity() {
 .today-button { margin-left: 9px; }
 .calendar-view-toggle { border: 1px solid #e3e9e4; border-radius: 8px; }
 .calendar-filters { display: grid; grid-template-columns: repeat(5, minmax(130px, 1fr)) auto; align-items: center; gap: 11px; padding: 15px 20px; }
-.calendar-filters :deep(.q-field__control) { border-radius: 8px; }
 .calendar-legend { display: flex; align-items: center; gap: 22px; padding: 16px 3px 12px; color: #526058; font-size: 12px; }
 .calendar-legend > span:not(.calendar-event-count) { display: flex; align-items: center; gap: 7px; }
 .legend-dot { width: 9px; height: 9px; border-radius: 50%; }
@@ -475,17 +480,14 @@ function registerActivity() {
 .agenda-date { display: flex; width: 42px; flex: 0 0 42px; flex-direction: column; align-items: center; color: #435149; line-height: 1.15; }
 .agenda-date strong { font-size: 18px; }
 .agenda-date small { margin-top: 3px; color: #77837b; font-size: 10px; text-transform: uppercase; }
-.agenda-event-icon { display: flex; width: 35px; height: 35px; flex: 0 0 35px; align-items: center; justify-content: center; border-radius: 50%; }
-.agenda-event-cycle .agenda-event-icon { background: #eaf5ec; color: #36834b; }
-.agenda-event-labor .agenda-event-icon { background: #eaf3fb; color: #4384bd; }
-.agenda-event-incident .agenda-event-icon { background: #fff3e5; color: #de8a33; }
+.agenda-event-icon { flex: 0 0 auto; color: var(--green-muted); font-size: 17px; }
 .agenda-event-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
-.agenda-event-copy strong { overflow: hidden; color: #26342b; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.agenda-event-copy strong { display: flex; align-items: center; gap: 7px; overflow: hidden; color: #26342b; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .agenda-event-copy small { overflow: hidden; color: #6a776e; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .agenda-chevron { color: #8c9890; }
 .calendar-empty-state { display: flex; min-height: 185px; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; color: #67746b; text-align: center; }
-.calendar-empty-state .q-icon { color: #9baa9e; font-size: 32px; }
-.calendar-empty-state strong { color: #334138; font-size: 14px; }
+.calendar-empty-state strong { display: flex; align-items: center; gap: 8px; color: #334138; font-size: 14px; }
+.calendar-empty-state strong .q-icon { color: var(--green-muted); font-size: 20px; }
 .calendar-empty-state span { font-size: 12px; }
 .calendar-day-dialog, .calendar-detail-dialog { width: min(580px, calc(100vw - 32px)); max-width: 580px; border-radius: 14px; }
 .calendar-dialog-heading, .calendar-detail-banner { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
@@ -496,12 +498,11 @@ function registerActivity() {
 .calendar-detail-labor { background: #eaf3fb; color: #245d8c; }
 .calendar-detail-incident { background: #fff3e5; color: #955311; }
 .calendar-detail-title { display: flex; min-width: 0; align-items: center; gap: 13px; }
-.calendar-detail-icon { display: flex; width: 42px; height: 42px; flex: 0 0 42px; align-items: center; justify-content: center; border-radius: 50%; background: rgb(255 255 255 / 70%); font-size: 21px; }
-.calendar-detail-title h2 { margin: 3px 0 0; overflow-wrap: anywhere; font-size: 20px; line-height: 1.2; }
+.calendar-detail-title h2 { display: flex; align-items: center; gap: 8px; margin: 3px 0 0; overflow-wrap: anywhere; font-size: 20px; line-height: 1.2; }
 .calendar-detail-content { padding: 20px 22px 24px; }
 .calendar-detail-location { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 18px; color: #4a5b50; font-size: 12px; }
 .calendar-detail-location span { display: inline-flex; align-items: center; gap: 5px; }
-.calendar-detail-location .q-icon { color: var(--green-primary); font-size: 16px; }
+.calendar-detail-location .q-icon { color: var(--green-muted); font-size: 16px; }
 .calendar-detail-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
 .calendar-detail-fields > div { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 4px; }
 .calendar-detail-fields small { color: #768178; font-size: 10px; }
@@ -542,7 +543,6 @@ function registerActivity() {
   .calendar-more-events { margin: 1px; padding: 1px; font-size: 8px; }
   .agenda-list { padding: 0 10px; }
   .agenda-event { gap: 9px; padding: 12px 1px; }
-  .agenda-event-icon { width: 30px; height: 30px; flex-basis: 30px; }
   .agenda-event-copy strong { font-size: 12px; }
   .agenda-event-copy small { font-size: 10px; }
   .calendar-detail-fields { gap: 13px 10px; }

@@ -10,13 +10,11 @@ import { useAuthStore } from '@/stores/auth'
 import { canAccess, canManageNotificationActions } from '@/services/permissions'
 import { getRecord, getRecords } from '@/services/storage'
 import {
-  archiveNotification as archiveLocalNotification,
   deleteNotification as deleteLocalNotification,
-  isNotificationArchived,
   isNotificationUnread,
   markNotificationRead as markLocalNotificationRead
 } from '@/services/notifications'
-import { getCurrentWeather } from '@/services/weather'
+import { getCurrentWeather, getWeatherCondition } from '@/services/weather'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -64,40 +62,57 @@ function updateViewportStatus() {
   isCompactViewport.value = window.innerWidth < 1024
 }
 
-function loadWeather() {
-  if (!navigator.geolocation) {
-    weatherState.value = 'unavailable'
-    return
-  }
+function getBrowserCoordinates() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject({ code: 2 })
+      return
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, { maximumAge: 300000, timeout: 8000 })
+  })
+}
+
+async function loadWeather() {
   weatherState.value = 'loading'
+  weatherData.value = null
+  let coordinates
+  let fallbackState = 'no-data'
+
   try {
-    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
-      try {
-        weatherData.value = await getCurrentWeather({ lat: coords.latitude, lon: coords.longitude })
-        weatherState.value = weatherData.value ? 'ready' : 'no-data'
-      } catch (error) {
-        console.error('No fue posible cargar el clima.', error)
-        weatherState.value = 'no-data'
-      }
-    }, (error) => {
-      weatherState.value = error.code === 1 ? 'permission' : 'no-data'
-    }, { maximumAge: 300000, timeout: 10000 })
+    const position = await getBrowserCoordinates()
+    coordinates = { lat: position.coords.latitude, lon: position.coords.longitude }
   } catch (error) {
-    console.error('No fue posible solicitar la ubicación.', error)
-    weatherState.value = 'unavailable'
+    fallbackState = error?.code === 1 ? 'permission' : 'no-data'
+  }
+
+  try {
+    weatherData.value = await getCurrentWeather(coordinates)
+    weatherState.value = weatherData.value ? 'ready' : fallbackState
+  } catch (error) {
+    console.error('No fue posible cargar el clima desde el backend.', error)
+    weatherState.value = 'error'
   }
 }
 
-const weatherLabel = computed(() => weatherData.value?.temperature !== undefined && weatherData.value?.temperature !== null
-  ? `${weatherData.value.temperature}°C`
-  : weatherState.value === 'loading' ? 'Cargando' : '--°C')
-const weatherMessage = computed(() => ({
-  loading: 'Cargando el clima de tu zona.',
-  permission: 'La ubicación no está autorizada.',
-  unavailable: 'La ubicación no está disponible en este dispositivo.',
-  'no-data': 'No hay datos del clima disponibles.',
-  ready: 'Clima de tu zona.'
-})[weatherState.value])
+const weatherCondition = computed(() => weatherData.value
+  ? getWeatherCondition(weatherData.value.weatherCode)
+  : null)
+const weatherStatusLabel = computed(() => ({
+  permission: 'Sin permiso ni datos',
+  'no-data': 'Sin datos del clima',
+  error: 'Error de conexión'
+})[weatherState.value] ?? '')
+const weatherMessage = computed(() => {
+  if (weatherState.value === 'ready') {
+    return `${weatherCondition.value.description} en ${weatherData.value.zoneName}.`
+  }
+  return ({
+    loading: 'Consultando el clima de tu zona.',
+    permission: 'Sin permiso de ubicación ni datos del clima disponibles.',
+    'no-data': 'No hay datos del clima disponibles.',
+    error: 'Error de red al consultar el clima.'
+  })[weatherState.value]
+})
 
 onMounted(() => {
   window.addEventListener('resize', updateViewportStatus)
@@ -113,7 +128,7 @@ const notifications = computed(() => {
   const farms = auth.currentUser?.farms ?? []
   return getRecords('notifications')
     .filter((item) => {
-      if (item.deletedAt || isNotificationArchived(item)) return false
+      if (item.deletedAt) return false
       if (auth.currentUser?.role === 'SuperAdmin') return true
       const farmId = getRecords('lots').find((lot) => lot.id === item.lotId)?.farmId
       return Boolean(farmId && farms.includes(farmId))
@@ -160,22 +175,21 @@ function markNotificationRead(notification) {
   }
 }
 
-function archiveNotification(notification) {
-  if (!canManageNotificationActions(auth.currentUser)) return
-  try {
-    archiveLocalNotification(notification)
-  } catch (error) {
-    $q.notify({ type: 'negative', message: error.message })
-  }
-}
-
 function deleteNotification(notification) {
   if (!canManageNotificationActions(auth.currentUser)) return
-  try {
-    deleteLocalNotification(notification)
-  } catch (error) {
-    $q.notify({ type: 'negative', message: error.message })
-  }
+  $q.dialog({
+    title: 'Eliminar notificación',
+    message: `¿Deseas eliminar “${notification.title}”?`,
+    cancel: { label: 'Cancelar', flat: true },
+    ok: { label: 'Eliminar', color: 'negative', flat: true },
+    persistent: true
+  }).onOk(() => {
+    try {
+      deleteLocalNotification(notification)
+    } catch (error) {
+      $q.notify({ type: 'negative', message: error.message })
+    }
+  })
 }
 
 /**
@@ -238,10 +252,19 @@ async function openAllNotifications() {
             <div class="page-heading"><strong>{{ pageTitle }}</strong></div>
           </div>
           <q-space />
-          <div class="weather-capsule" role="status" :aria-label="weatherMessage">
-            <q-icon name="wb_cloudy" />
-            <span>{{ weatherLabel }}</span>
-            <small v-if="weatherData?.zoneName">{{ weatherData.zoneName }}</small>
+          <div class="weather-capsule" role="status" aria-live="polite" :aria-label="weatherMessage">
+            <q-skeleton v-if="weatherState === 'loading'" type="text" width="128px" height="16px" class="weather-loading" />
+            <template v-else-if="weatherData">
+              <q-icon :name="weatherCondition.icon" />
+              <span class="weather-temperature">{{ weatherData.temperature.toLocaleString('es-CO', { maximumFractionDigits: 1 }) }}°C</span>
+              <span class="weather-description">{{ weatherCondition.description }}</span>
+              <small class="weather-zone">{{ weatherData.zoneName }}</small>
+            </template>
+            <template v-else>
+              <q-icon :name="weatherState === 'error' ? 'cloud_off' : 'location_off'" />
+              <span class="weather-state-label">{{ weatherStatusLabel }}</span>
+              <button type="button" class="weather-retry-button" @click="loadWeather">Reintentar</button>
+            </template>
             <q-tooltip>{{ weatherMessage }}</q-tooltip>
           </div>
           <div class="notification-anchor">
@@ -253,12 +276,10 @@ async function openAllNotifications() {
                 <div class="notification-popover-title"><h2>Notificaciones</h2><q-badge v-if="unreadCount" color="primary" rounded>{{ unreadCount }}</q-badge></div>
                 <div class="notification-list">
                   <div v-for="notification in notifications" :key="notification.id" class="notification-entry" :class="{ unread: isUnread(notification) }">
-                    <q-avatar size="38px" class="brand-green-tint brand-green-text"><q-icon :name="notification.title.toLowerCase().includes('humedad') ? 'water_drop' : 'notifications_active'" /></q-avatar>
-                    <span class="notification-entry-copy"><strong>{{ notification.title }}</strong><span>{{ notification.message }}</span><small>{{ relativeTime(notification.date) }}</small></span>
+                    <span class="notification-entry-copy"><strong><q-icon :name="notification.title.toLowerCase().includes('humedad') ? 'water_drop' : 'notifications_active'" />{{ notification.title }}</strong><span>{{ notification.message }}</span><small>{{ relativeTime(notification.date) }}</small></span>
                     <span v-if="isUnread(notification)" class="notification-unread-dot" aria-label="No leída"></span>
                     <div class="notification-entry-actions">
-                      <q-btn flat round dense icon="done" aria-label="Marcar como leída" :disable="!isUnread(notification)" @click="markNotificationRead(notification)"><q-tooltip>Marcar como leída</q-tooltip></q-btn>
-                      <q-btn flat round dense icon="archive" aria-label="Archivar" @click="archiveNotification(notification)"><q-tooltip>Archivar</q-tooltip></q-btn>
+                      <q-btn v-if="isUnread(notification)" flat round dense icon="done" aria-label="Marcar como leída" @click="markNotificationRead(notification)"><q-tooltip>Marcar como leída</q-tooltip></q-btn>
                       <q-btn flat round dense icon="delete_outline" color="negative" aria-label="Eliminar" @click="deleteNotification(notification)"><q-tooltip>Eliminar</q-tooltip></q-btn>
                     </div>
                   </div>

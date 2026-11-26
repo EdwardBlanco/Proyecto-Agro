@@ -209,6 +209,7 @@ watch([selectedUnidad, selectedCiclo], async () => {
 .telemetry-kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-auto-rows: 1fr;
   gap: 16px;
   align-items: stretch;
 }

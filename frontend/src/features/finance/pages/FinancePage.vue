@@ -1,8 +1,7 @@
 <template>
   <q-page class="q-pa-md">
     <div v-if="!isAdminProductor" class="q-pa-md text-center">
-      <q-icon name="lock" size="xl" color="negative" />
-      <div class="text-h6 q-mt-md">Acceso Restringido</div>
+      <div class="text-h6 q-mt-md"><q-icon class="decorative-inline-icon" name="lock" />Acceso Restringido</div>
       <div>No tienes permisos para ver información financiera.</div>
     </div>
 
@@ -118,6 +117,7 @@ onMounted(async () => {
 .finance-kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(235px, 1fr));
+  grid-auto-rows: 1fr;
   gap: 16px;
   align-items: stretch;
 }

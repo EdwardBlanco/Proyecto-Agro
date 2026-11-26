@@ -69,7 +69,7 @@ const weeklyHarvestKilograms = computed(() => weeklyHarvests.value.reduce((sum, 
 const activeUsers = computed(() => getRecords('users').filter((user) => user.active &&
   (auth.currentUser?.role === 'SuperAdmin' ||
     user.farms?.some((farmId) => farmIds.value.includes(farmId)))))
-const notifications = computed(() => scoped('notifications').filter((item) => item.status === 'Pendiente' && !item.deletedAt && !item.archivedAt))
+const notifications = computed(() => scoped('notifications').filter((item) => item.status === 'Pendiente' && !item.deletedAt))
 const totalHarvest = computed(() => harvests.value.reduce((total, item) => total + harvestKilograms(item), 0))
 const weightedHarvests = computed(() => harvests.value.filter((item) => harvestKilograms(item) > 0))
 const chartHarvests = computed(() => [...weightedHarvests.value]
@@ -78,15 +78,15 @@ const chartHarvests = computed(() => [...weightedHarvests.value]
 const chartMaximum = computed(() => Math.max(1, ...chartHarvests.value.map(harvestKilograms)))
 const quickLinks = [
   { title: 'Registrar labor', icon: 'add_task', route: 'activities', color: 'green' },
-  { title: 'Nuevo ciclo', icon: 'autorenew', route: 'cycles', color: 'blue' },
+  { title: 'Nuevo ciclo productivo', icon: 'autorenew', route: 'cycles', color: 'blue' },
   { title: 'Registrar cosecha', icon: 'agriculture', route: 'harvests', color: 'orange' },
   { title: 'Ver monitoreo', icon: 'sensors', route: 'telemetry', color: 'purple' }
 ]
 const metrics = computed(() => [
-  { title: 'Clima', value: latestTemperature.value ? `${latestTemperature.value.value} ${latestTemperature.value.unit}` : 'Sin dato', detail: latestTemperature.value ? `Última lectura · ${formatDateTime(latestTemperature.value.date)}` : 'No hay lecturas de temperatura', icon: 'wb_sunny', tint: 'amber', route: 'telemetry' },
-  { title: 'Humedad del suelo', value: latestSoilMoisture.value ? `${latestSoilMoisture.value.value} ${latestSoilMoisture.value.unit}` : 'Sin dato', detail: latestSoilMoisture.value ? `Última lectura · ${formatDateTime(latestSoilMoisture.value.date)}` : 'No hay lecturas de humedad', icon: 'water_drop', tint: 'blue', route: 'telemetry' },
-  { title: 'Cosecha de la semana', value: `${weeklyHarvestKilograms.value.toLocaleString('es-CO')} kg`, detail: `${weeklyHarvests.value.length} registros en los últimos 7 días`, icon: 'agriculture', tint: 'mint', route: 'harvests' },
-  { title: 'Usuarios activos', value: activeUsers.value.length, detail: 'Cuentas activas asociadas a tus predios', icon: 'groups', tint: 'violet', route: 'users' }
+  { title: 'Clima', value: latestTemperature.value ? `${latestTemperature.value.value} ${latestTemperature.value.unit}` : 'Sin dato', detail: latestTemperature.value ? `Última lectura · ${formatDateTime(latestTemperature.value.date)}` : 'No hay lecturas de temperatura', icon: 'wb_sunny', route: 'telemetry' },
+  { title: 'Humedad del suelo', value: latestSoilMoisture.value ? `${latestSoilMoisture.value.value} ${latestSoilMoisture.value.unit}` : 'Sin dato', detail: latestSoilMoisture.value ? `Última lectura · ${formatDateTime(latestSoilMoisture.value.date)}` : 'No hay lecturas de humedad', icon: 'water_drop', route: 'telemetry' },
+  { title: 'Cosecha de la semana', value: `${weeklyHarvestKilograms.value.toLocaleString('es-CO')} kg`, detail: `${weeklyHarvests.value.length} registros en los últimos 7 días`, icon: 'agriculture', route: 'harvests' },
+  { title: 'Usuarios activos', value: activeUsers.value.length, detail: 'Cuentas activas asociadas a tus predios', icon: 'groups', route: 'users' }
 ])
 const recentActivities = computed(() => [...activities.value].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4))
 const featuredLots = computed(() => lots.value.slice(0, 3).map((lot) => {
@@ -133,9 +133,9 @@ function openMetric(metric) {
     </div>
 
     <div class="metric-grid">
-      <q-card v-for="metric in metrics" :key="metric.title" flat bordered class="metric-card" :class="{ 'metric-card-static': !canAccess(auth.currentUser, metric.route) }" :aria-disabled="!canAccess(auth.currentUser, metric.route)" @click="openMetric(metric)">
+      <q-card v-for="metric in metrics" :key="metric.title" flat bordered class="metric-card" :class="{ 'metric-card-static': !canAccess(auth.currentUser, metric.route), 'card-clickable': canAccess(auth.currentUser, metric.route) }" :aria-disabled="!canAccess(auth.currentUser, metric.route)" @click="openMetric(metric)">
         <q-card-section>
-          <div class="metric-top"><span>{{ metric.title }}</span><div class="metric-icon" :class="`tint-${metric.tint}`"><q-icon :name="metric.icon" /></div></div>
+          <div class="metric-top"><span><q-icon class="metric-icon" :name="metric.icon" />{{ metric.title }}</span></div>
           <div class="metric-value">{{ metric.value }}</div><div class="metric-detail">{{ metric.detail }}</div>
         </q-card-section>
       </q-card>
@@ -174,16 +174,15 @@ function openMetric(metric) {
         <q-separator />
         <q-list v-if="recentActivities.length">
           <q-item v-for="item in recentActivities" :key="item.id" class="activity-row">
-            <q-item-section avatar><q-avatar :class="item.kind === 'Incidencia' ? '' : 'brand-green-tint brand-green-text'" :color="item.kind === 'Incidencia' ? 'orange-1' : undefined" :text-color="item.kind === 'Incidencia' ? 'orange-9' : undefined"><q-icon :name="item.kind === 'Incidencia' ? 'warning_amber' : 'eco'" /></q-avatar></q-item-section>
-            <q-item-section><q-item-label class="activity-title">{{ item.type }}</q-item-label><q-item-label caption>{{ item.description }} · {{ relatedName('cycles', item.cycleId) }}</q-item-label></q-item-section>
+            <q-item-section><q-item-label class="activity-title"><q-icon class="decorative-inline-icon" :name="item.kind === 'Incidencia' ? 'warning_amber' : 'eco'" />{{ item.type }}</q-item-label><q-item-label caption>{{ item.description }} · {{ relatedName('cycles', item.cycleId) }}</q-item-label></q-item-section>
             <q-item-section side><span class="activity-date">{{ item.date }}</span><q-badge :class="item.status === 'Completada' ? 'status-active' : 'status-neutral'">{{ item.status }}</q-badge></q-item-section>
           </q-item>
         </q-list>
-        <div v-else class="empty-state"><q-icon name="event_note" /><strong>Aún no hay actividad registrada</strong><span>Registra la primera labor para ver el seguimiento aquí.</span><q-btn flat no-caps color="primary" label="Registrar actividad" :to="{ name: 'activities' }" /></div>
+        <div v-else class="empty-state"><strong><q-icon name="event_note" />Aún no hay actividad registrada</strong><span>Registra la primera labor para ver el seguimiento aquí.</span><q-btn flat no-caps color="primary" label="Registrar actividad" :to="{ name: 'activities' }" /></div>
       </q-card>
       <div class="dashboard-side">
         <q-card flat bordered class="panel-card">
-          <q-card-section class="panel-heading"><div><h2>Alertas y avisos</h2><p>{{ notifications.length }} pendientes</p></div><q-icon name="notifications_active" color="primary" size="22px" /></q-card-section>
+          <q-card-section class="panel-heading"><div><h2><q-icon name="notifications_active" />Alertas y avisos</h2><p>{{ notifications.length }} pendientes</p></div></q-card-section>
           <q-separator />
           <q-list v-if="notifications.length">
             <q-item v-for="notice in notifications.slice(0, 3)" :key="notice.id" class="notice-row"><q-item-section avatar><q-icon name="circle" size="9px" color="orange" /></q-item-section><q-item-section><q-item-label class="notice-title">{{ notice.title }}</q-item-label><q-item-label caption>{{ notice.message }}</q-item-label></q-item-section></q-item>
@@ -200,16 +199,16 @@ function openMetric(metric) {
 
     <div class="dashboard-columns lower-dashboard">
       <q-card flat bordered class="panel-card">
-        <q-card-section class="panel-heading"><div><h2>Producción de la temporada</h2><p>Volumen acumulado a partir de cosechas registradas</p></div><q-icon name="trending_up" color="primary" size="24px" /></q-card-section>
+        <q-card-section class="panel-heading"><div><h2><q-icon name="trending_up" />Producción de la temporada</h2><p>Volumen acumulado a partir de cosechas registradas</p></div></q-card-section>
         <q-card-section v-if="harvests.length" class="harvest-summary"><div class="harvest-total">{{ totalHarvest.toLocaleString('es-CO') }} <small>kg registrados</small></div><div v-if="chartHarvests.length" class="production-chart" role="img" aria-label="Gráfica de kilos cosechados por fecha">
           <div class="chart-y-axis"><strong>Kilos</strong><div><span>{{ chartMaximum.toLocaleString('es-CO') }}</span><span>{{ (chartMaximum / 2).toLocaleString('es-CO', { maximumFractionDigits: 1 }) }}</span><span>0</span></div></div>
           <div><div class="chart-plot"><div class="chart-gridlines"><i></i><i></i><i></i></div><div class="harvest-bars"><div v-for="item in chartHarvests" :key="item.id" class="harvest-bar-wrap"><div class="harvest-bar" :style="{ height: `${Math.max(8, (harvestKilograms(item) / chartMaximum) * 100)}%` }" tabindex="0" role="img" :aria-label="`Cosecha de ${relatedName('cycles', item.cycleId)}: ${harvestKilograms(item).toLocaleString('es-CO')} kilos el ${formatChartDate(item.date)}`"><q-tooltip>Cosecha de {{ relatedName('cycles', item.cycleId) }}: {{ harvestKilograms(item).toLocaleString('es-CO') }} kilos · {{ formatChartDate(item.date) }}</q-tooltip></div><small>{{ formatChartDate(item.date) }}</small></div></div></div><div class="chart-x-axis">Fecha</div></div>
         </div><div v-else class="small-empty">Las cosechas registradas usan unidades que no se convierten a kg (cajas o unidades).</div></q-card-section>
-        <div v-else class="empty-state dashboard-panel-empty"><q-icon name="agriculture" /><strong>Sin producción registrada</strong><span>Registra una cosecha para consultar el comportamiento de la producción.</span><q-btn flat no-caps color="primary" icon="add" label="Registrar cosecha" :to="{ name: 'harvests' }" /></div>
+        <div v-else class="empty-state dashboard-panel-empty"><strong><q-icon name="agriculture" />Sin producción registrada</strong><span>Registra una cosecha para consultar el comportamiento de la producción.</span><q-btn flat no-caps color="primary" icon="add" label="Registrar cosecha" :to="{ name: 'harvests' }" /></div>
       </q-card>
       <q-card flat bordered class="panel-card nursery-card">
         <q-card-section class="panel-heading"><div><h2>Semilleros en seguimiento</h2><p>Estado actual de germinación y trasplante</p></div><q-btn flat round dense icon="arrow_forward" :to="{ name: 'nurseries' }" /></q-card-section>
-        <q-list v-if="nurseries.length"><q-item v-for="item in nurseries.slice(0, 2)" :key="item.id"><q-item-section avatar><q-avatar class="brand-green-tint brand-green-text" icon="spa" /></q-item-section><q-item-section><q-item-label>{{ item.name }}</q-item-label><q-item-label caption>{{ relatedName('crops', item.cropId) }} · {{ item.status }}</q-item-label><q-linear-progress :value="Number(item.germination || 0) / 100" color="primary" rounded class="q-mt-sm" /></q-item-section><q-item-section side>{{ item.germination }}%</q-item-section></q-item></q-list>
+        <q-list v-if="nurseries.length"><q-item v-for="item in nurseries.slice(0, 2)" :key="item.id"><q-item-section><q-item-label><q-icon class="decorative-inline-icon" name="spa" />{{ item.name }}</q-item-label><q-item-label caption>{{ relatedName('crops', item.cropId) }} · {{ item.status }}</q-item-label><q-linear-progress :value="Number(item.germination || 0) / 100" color="primary" rounded class="q-mt-sm" /></q-item-section><q-item-section side>{{ item.germination }}%</q-item-section></q-item></q-list>
         <div v-else class="small-empty">No hay semilleros activos.</div>
       </q-card>
     </div>

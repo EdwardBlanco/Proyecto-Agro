@@ -15,8 +15,7 @@ defineProps({
   <q-card flat bordered class="kpi-card">
     <q-card-section>
       <div class="kpi-card-heading">
-        <h3>{{ title }}</h3>
-        <q-avatar class="kpi-card-icon"><q-icon :name="icon" /></q-avatar>
+        <h3><q-icon class="kpi-card-icon" :name="icon" />{{ title }}</h3>
       </div>
       <div class="kpi-card-value">
         <strong>{{ value }}</strong>
@@ -30,6 +29,7 @@ defineProps({
 
 <style scoped>
 .kpi-card {
+  height: 100%;
   min-width: 0;
   border-color: var(--line);
   border-radius: 14px;
@@ -51,6 +51,9 @@ defineProps({
 }
 
 .kpi-card-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   color: var(--green-dark);
   font-size: 16px;
@@ -59,8 +62,7 @@ defineProps({
 
 .kpi-card-icon {
   flex: 0 0 auto;
-  color: var(--green-primary);
-  background: var(--green-soft);
+  color: var(--green-muted);
 }
 
 .kpi-card-value {

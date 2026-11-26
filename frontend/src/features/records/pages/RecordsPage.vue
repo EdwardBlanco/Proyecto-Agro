@@ -13,12 +13,9 @@ import { useAuthStore } from '@/stores/auth'
 import { canAccess, canManageNotificationActions, canWrite, visibleFarmIds } from '@/services/permissions'
 import { getRecord, getRecords, removeRecord, saveRecord } from '@/services/storage'
 import {
-  archiveNotification,
   deleteNotification,
-  isNotificationArchived,
   isNotificationUnread,
-  markNotificationRead,
-  unarchiveNotification
+  markNotificationRead
 } from '@/services/notifications'
 import { getAuthToken } from '@/services/api'
 import { changeFarmStatus, createFarm, fetchFarms, updateFarm } from '@/services/farms.service'
@@ -32,6 +29,7 @@ import ProgressBar from '@/components/ProgressBar.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import farmPlaceholder from '@/assets/farm-placeholder.svg'
 import lotPlaceholder from '@/assets/lot-placeholder.svg'
+import RecordDetailDialog from '@/features/records/components/RecordDetailDialog.vue'
 import { getResponsibleUsers } from '@/services/mock/users'
 import { formatDateTime } from '@/services/dates'
 import { harvestKilograms } from '@/services/production'
@@ -69,6 +67,8 @@ const formFields = computed(() => {
 const enumFilter = ref('')
 const telemetryFilters = ref({ farmId: '', lotId: '', variable: '', from: '', to: '' })
 const dialog = ref(false)
+const detailDialog = ref(false)
+const detailRecord = ref(null)
 const deleteDialog = ref(false)
 const deleteStep = ref(1)
 const deleteReady = ref(false)
@@ -205,8 +205,6 @@ function displayRow(item) {
     row.farmsLabel = row.assignedFarmNames.join(', ') || missingData
     row.activeLabel = item.active === true ? 'Activo' : item.active === false ? 'Inactivo' : missingData
   }
-  if (config.value.entity === 'notifications') row.status = isNotificationArchived(item) ? 'Archivada' : item.status
-  if (config.value.entity === 'crops') row.emoji = item.emoji || '🌱'
   if (config.value.entity === 'inputs') row.emoji = item.emoji || '🧪'
   if (config.value.entity === 'farms') {
     const owner = getRecord('users', item.owner)
@@ -377,7 +375,7 @@ const columns = computed(() => {
   else if (config.value.entity === 'users') definitions = userColumns.value
   return [
     ...definitions.map(([name, label]) => ({ name, label, field: name, align: 'left', sortable: name !== 'farmsLabel' })),
-    { name: 'actions', label: 'Acciones', field: 'actions', align: 'right' }
+    { name: 'actions', label: 'Acciones', field: 'actions', align: 'center' }
   ]
 })
 
@@ -571,7 +569,6 @@ const harvestQualityDistribution = computed(() => {
   }
 })
 const isUnreadNotification = isNotificationUnread
-const isArchivedNotification = isNotificationArchived
 const notificationRowClass = (row) => isUnreadNotification(row) ? 'notification-unread-row' : 'notification-read-row'
 const relationOptions = (field) => {
   let records = getRecords(field.entity)
@@ -698,11 +695,15 @@ function openCreate() {
   dialog.value = true
 }
 
+function openDetail(row) {
+  detailRecord.value = getRecord(config.value.entity, row.id)
+  detailDialog.value = Boolean(detailRecord.value)
+}
+
 function openEdit(row) {
   editing.value = row.id
   activityStep.value = 1
   form.value = JSON.parse(JSON.stringify(getRecord(config.value.entity, row.id)))
-  if (config.value.entity === 'crops' && !form.value.emoji) form.value.emoji = '🌱'
   if (config.value.entity === 'inputs' && !form.value.emoji) form.value.emoji = '🧪'
   if (config.value.entity === 'users') {
     if (auth.currentUser?.role === 'Admin') {
@@ -904,28 +905,6 @@ function markNotificationReadInList(notification) {
   }
 }
 
-function archiveNotificationInList(notification) {
-  if (!canManageNotificationActions(auth.currentUser)) return
-  try {
-    const storedNotification = getRecord('notifications', notification.id)
-    if (!storedNotification) throw new Error('La notificación ya no está disponible.')
-    archiveNotification(storedNotification)
-  } catch (error) {
-    $q.notify({ type: 'negative', message: error.message })
-  }
-}
-
-function unarchiveNotificationInList(notification) {
-  if (!canManageNotificationActions(auth.currentUser)) return
-  try {
-    const storedNotification = getRecord('notifications', notification.id)
-    if (!storedNotification) throw new Error('La notificación ya no está disponible.')
-    unarchiveNotification(storedNotification)
-  } catch (error) {
-    $q.notify({ type: 'negative', message: error.message })
-  }
-}
-
 function continueDelete() {
   deleteStep.value = 2
   deleteReady.value = false
@@ -1045,11 +1024,11 @@ watch(() => [route.name, route.params.farmId, route.query.cycle], () => {
 <template>
   <q-page class="page-content records-page">
     <div v-if="activeFarmId" class="records-breadcrumb-row">
+      <BackButton :to="{ name: 'farms' }" />
       <q-breadcrumbs separator="chevron_right" class="records-breadcrumbs">
         <q-breadcrumbs-el label="Predios" :to="{ name: 'farms' }" />
         <q-breadcrumbs-el :label="activeFarm?.name ?? 'Predio'" />
       </q-breadcrumbs>
-      <BackButton label="Volver a Predios" :to="{ name: 'farms' }" />
     </div>
     <q-card flat bordered class="records-card" :class="{ 'telemetry-records-card': config.entity === 'telemetry' }">
       <div class="records-toolbar">
@@ -1215,9 +1194,7 @@ watch(() => [route.name, route.params.farmId, route.query.cycle], () => {
         <template #body-cell-actions="props">
           <q-td :props="props" class="action-cell">
             <template v-if="config.entity === 'notifications'">
-              <q-btn flat round dense icon="done" color="primary" aria-label="Marcar como leída" :disable="!isUnreadNotification(props.row)" @click="markNotificationReadInList(props.row)"><q-tooltip>Marcar como leída</q-tooltip></q-btn>
-              <q-btn v-if="isArchivedNotification(props.row)" flat round dense icon="unarchive" color="primary" aria-label="Desarchivar notificación" @click="unarchiveNotificationInList(props.row)"><q-tooltip>Desarchivar</q-tooltip></q-btn>
-              <q-btn v-else flat round dense icon="archive" color="primary" aria-label="Archivar notificación" @click="archiveNotificationInList(props.row)"><q-tooltip>Archivar</q-tooltip></q-btn>
+              <q-btn v-if="isUnreadNotification(props.row)" flat round dense icon="done" color="primary" aria-label="Marcar como leída" @click="markNotificationReadInList(props.row)"><q-tooltip>Marcar como leída</q-tooltip></q-btn>
               <q-btn flat round dense icon="delete_outline" color="negative" aria-label="Eliminar notificación" @click="confirmDelete(props.row)"><q-tooltip>Eliminar</q-tooltip></q-btn>
             </template>
             <template v-else>
@@ -1269,15 +1246,15 @@ watch(() => [route.name, route.params.farmId, route.query.cycle], () => {
             :create-label="emptyStateInfo.createLabel || 'Crear registro'"
             @create="openCreate"
           />
-          <div v-else class="full-width empty-state table-empty"><q-icon name="inventory_2" /><strong>{{ hasFilters ? 'No encontramos resultados' : 'Todavía no hay registros' }}</strong><span>{{ hasFilters ? 'Prueba con otros filtros.' : 'Cuando agregues información, aparecerá aquí.' }}</span></div>
+          <div v-else class="full-width empty-state table-empty"><strong><q-icon name="inventory_2" />{{ hasFilters ? 'No encontramos resultados' : 'Todavía no hay registros' }}</strong><span>{{ hasFilters ? 'Prueba con otros filtros.' : 'Cuando agregues información, aparecerá aquí.' }}</span></div>
         </template>
       </q-table>
-      <div v-if="filteredRows.length" class="row q-col-gutter-md record-card-grid" :class="{ 'record-card-grid-always': useVisualCards }" aria-label="Registros">
-        <div v-for="row in filteredRows" :key="row.id" :class="config.entity === 'lots' ? 'col-12 col-sm-6 col-md-4 col-lg-4' : 'col-12 col-sm-6 col-md-4 col-lg-3'">
+      <div v-if="filteredRows.length" class="record-card-grid" :class="[!useVisualCards && 'row q-col-gutter-md', { 'record-card-grid-always': useVisualCards, 'record-card-grid--lots': config.entity === 'lots' }]" aria-label="Registros">
+        <div v-for="row in filteredRows" :key="row.id" :class="useVisualCards ? '' : config.entity === 'lots' ? 'col-12 col-sm-6 col-md-4 col-lg-4' : 'col-12 col-sm-6 col-md-4 col-lg-3'">
           <q-card flat bordered class="record-mobile-card" :class="{ 'farm-compact-card': config.entity === 'farms', 'lot-compact-card': config.entity === 'lots' }">
             <template v-if="config.entity === 'farms'">
+              <img class="record-card-cover" :src="farmPlaceholder" alt="" />
               <q-card-section class="compact-card-heading">
-                <img class="compact-card-placeholder" :src="farmPlaceholder" alt="" />
                 <div class="compact-card-title">
                   <h2>{{ row.name || missingData }}</h2>
                   <p><q-icon name="place" />{{ row.municipality || missingData }}, {{ row.department || missingData }}</p>
@@ -1290,14 +1267,15 @@ watch(() => [route.name, route.params.farmId, route.query.cycle], () => {
                 <div><span>Cultivos activos</span><strong>{{ row.activeCropsCount }}</strong></div>
               </div>
               <q-card-actions class="compact-card-actions">
+                <q-btn flat no-caps icon="visibility" label="Ver detalle" class="detail-card-button" @click="openDetail(row)" />
                 <q-btn flat round dense icon="grid_view" color="primary" aria-label="Gestionar lotes" :to="{ name: 'lots', params: { farmId: row.id } }"><q-tooltip>Gestionar lotes</q-tooltip></q-btn>
                 <q-btn v-if="canEdit" flat round dense icon="edit" color="primary" aria-label="Editar predio" @click="openEdit(row)"><q-tooltip>Editar</q-tooltip></q-btn>
                 <q-btn v-if="canEdit" flat round dense icon="delete_outline" color="negative" aria-label="Eliminar predio" @click="confirmDelete(row)"><q-tooltip>Eliminar</q-tooltip></q-btn>
               </q-card-actions>
             </template>
             <template v-else-if="config.entity === 'lots'">
+              <img class="record-card-cover" :src="lotPlaceholder" alt="" />
               <q-card-section class="compact-card-heading">
-                <img class="compact-card-placeholder" :src="lotPlaceholder" alt="" />
                 <div class="compact-card-title">
                   <h2>{{ row.name || missingData }}</h2>
                   <p><q-icon name="landscape" />{{ row.farmName && row.farmName !== '—' ? row.farmName : missingData }}</p>
@@ -1310,8 +1288,24 @@ watch(() => [route.name, route.params.farmId, route.query.cycle], () => {
                 <div class="compact-metric-wide"><span>Ciclo productivo</span><strong>{{ row.cycleName || missingData }}</strong></div>
               </div>
               <q-card-actions class="compact-card-actions">
+                <q-btn flat no-caps icon="visibility" label="Ver detalle" class="detail-card-button" @click="openDetail(row)" />
                 <q-btn v-if="canEdit" flat round dense icon="edit" color="primary" aria-label="Editar lote" @click="openEdit(row)"><q-tooltip>Editar</q-tooltip></q-btn>
                 <q-btn v-if="canEdit" flat round dense icon="delete_outline" color="negative" aria-label="Eliminar lote" @click="confirmDelete(row)"><q-tooltip>Eliminar</q-tooltip></q-btn>
+              </q-card-actions>
+            </template>
+            <template v-else-if="config.entity === 'crops'">
+              <img class="record-card-cover" :src="row.image || lotPlaceholder" :alt="`Cultivo ${row.name}`" />
+              <q-card-section class="crop-card-content">
+                <h2>{{ row.name || missingData }}</h2>
+                <div class="crop-card-detail"><span>Variedad</span><strong>{{ row.variety || missingData }}</strong></div>
+                <div class="crop-card-detail"><span>Etapas fenológicas</span><strong>{{ row.stages || missingData }}</strong></div>
+                <div class="crop-card-detail"><span>Categoría</span><strong>{{ row.category || missingData }}</strong></div>
+                <div class="crop-card-detail"><span>Insumos asociados</span><strong>{{ row.inputsLabel || 'Sin insumos' }}</strong></div>
+              </q-card-section>
+              <q-card-actions class="compact-card-actions">
+                <q-btn flat no-caps icon="visibility" label="Ver detalle" class="detail-card-button" @click="openDetail(row)" />
+                <q-btn v-if="canEdit" flat round dense icon="edit" color="primary" aria-label="Editar cultivo" @click="openEdit(row)"><q-tooltip>Editar</q-tooltip></q-btn>
+                <q-btn v-if="canEdit" flat round dense icon="delete_outline" color="negative" aria-label="Eliminar cultivo" @click="confirmDelete(row)"><q-tooltip>Eliminar</q-tooltip></q-btn>
               </q-card-actions>
             </template>
             <template v-else>
@@ -1320,32 +1314,21 @@ watch(() => [route.name, route.params.farmId, route.query.cycle], () => {
                   <q-item-section v-if="config.entity === 'users'" avatar>
                     <q-avatar class="user-avatar" aria-hidden="true">{{ userInitials(row.name) || '—' }}</q-avatar>
                   </q-item-section>
-                  <q-item-section v-else-if="['crops', 'inputs'].includes(config.entity)" avatar>
-                    <q-avatar class="record-card-emoji-avatar" aria-hidden="true">{{ row.emoji }}</q-avatar>
-                  </q-item-section>
-                  <q-item-section v-if="config.entity === 'activities'" avatar>
-                    <q-avatar :class="row.kind === 'Incidencia' ? 'activity-incidence-avatar' : 'brand-green-tint brand-green-text'" :icon="row.kind === 'Incidencia' ? 'warning_amber' : 'task_alt'" />
-                  </q-item-section>
                   <q-item-section>
-                    <q-item-label class="record-card-title">{{ config.entity === 'users' ? row.name || missingData : config.entity === 'activities' ? row.type || missingData : config.entity === 'harvests' ? row.cropName : rowName(row) }}</q-item-label>
-                    <q-item-label v-if="config.entity === 'crops' && (row.category || row.type)" caption class="crop-card-tags">
-                      <q-chip v-if="row.category" dense square class="crop-card-tag">{{ row.category }}</q-chip>
-                      <q-chip v-if="row.type" dense square class="crop-card-tag">{{ row.type }}</q-chip>
-                    </q-item-label>
-                    <q-item-label v-else caption>{{ config.entity === 'users' ? row.email || missingData : config.entity === 'activities' ? `${row.kind || missingData} · ${row.cycleName} · ${row.responsible} · ${row.dateLabel}` : config.entity === 'harvests' ? `${row.cycleName} · ${row.dateLabel}` : config.entity === 'nurseries' ? `${row.cropName} · ${row.cycleName}` : config.entity === 'inputs' ? `${row.category || missingData} · ${row.stockLabel}` : config.title }}</q-item-label>
+                    <q-item-label class="record-card-title"><q-icon v-if="config.entity === 'activities'" class="decorative-inline-icon" :name="row.kind === 'Incidencia' ? 'warning_amber' : 'task_alt'" /><span v-if="config.entity === 'inputs'" class="record-card-inline-emoji" aria-hidden="true">{{ row.emoji }}</span>{{ config.entity === 'users' ? row.name || missingData : config.entity === 'activities' ? row.type || missingData : config.entity === 'harvests' ? row.cropName : rowName(row) }}</q-item-label>
+                    <q-item-label caption>{{ config.entity === 'users' ? row.email || missingData : config.entity === 'activities' ? `${row.kind || missingData} · ${row.cycleName} · ${row.responsible} · ${row.dateLabel}` : config.entity === 'harvests' ? `${row.cycleName} · ${row.dateLabel}` : config.entity === 'nurseries' ? `${row.cropName} · ${row.cycleName}` : config.entity === 'inputs' ? `${row.category || missingData} · ${row.stockLabel}` : config.title }}</q-item-label>
                   </q-item-section>
                   <q-item-section v-if="config.entity === 'users'" side><div class="user-card-statuses"><StatusBadge :status="row.role" /><StatusBadge :status="row.activeLabel" /></div></q-item-section>
                   <q-item-section v-if="config.entity === 'nurseries'" side><StatusBadge :status="row.status" /></q-item-section>
                   <q-item-section v-else-if="config.entity === 'harvests'" side><StatusBadge :status="row.quality" /></q-item-section>
-                  <q-item-section v-else-if="config.entity === 'inputs'" side><StatusBadge :status="row.availabilityStatus" /></q-item-section>
+                  <q-item-section v-else-if="config.entity === 'inputs' && row.availabilityStatus !== missingData" side><StatusBadge :status="row.availabilityStatus" /></q-item-section>
                   <q-item-section v-else-if="['cycles', 'activities'].includes(config.entity)" side><StatusBadge :status="row.status" /></q-item-section>
                   <q-item-section v-else-if="row.status" side><q-badge :class="statusClass(row.status)">{{ row.status }}</q-badge></q-item-section>
                 </template>
-                <q-card-section class="record-mobile-card-fields" :class="{ 'crop-card-fields': config.entity === 'crops' }">
+                <q-card-section class="record-mobile-card-fields">
                   <div
                     v-for="[key, label] in mobileColumns.filter(([key]) =>
                       key !== 'name' &&
-                      !(config.entity === 'crops' && key === 'category') &&
                       !(config.entity === 'users' && ['name', 'email', 'role', 'activeLabel'].includes(key)) &&
                       !(config.entity === 'activities' && ['kind', 'type', 'status'].includes(key)) &&
                       !(config.entity === 'nurseries' && key === 'status') &&
@@ -1466,13 +1449,14 @@ watch(() => [route.name, route.params.farmId, route.query.cycle], () => {
           @create="openCreate"
         />
         <div v-else class="empty-state">
-          <q-icon name="inventory_2" />
-          <strong>{{ hasFilters ? 'No encontramos resultados' : 'Todavía no hay registros' }}</strong>
+          <strong><q-icon name="inventory_2" />{{ hasFilters ? 'No encontramos resultados' : 'Todavía no hay registros' }}</strong>
           <span>{{ activeFarm ? `Este predio aún no tiene lotes registrados.` : hasFilters ? 'Prueba con otros filtros.' : 'Cuando agregues información, aparecerá aquí.' }}</span>
         </div>
       </div>
       <div v-if="config.entity === 'users'" class="simulation-note"><q-icon name="info" /> <span v-if="localUserManagement">Las cuentas se guardan en este navegador; la contraseña se almacena localmente para esta demostración.</span><span v-else>Los cambios de usuarios se sincronizan con el servidor. Si no defines una contraseña al crear la cuenta, se asignará <strong>Agro2026!</strong> por defecto.</span></div>
     </q-card>
+
+    <RecordDetailDialog v-model="detailDialog" :entity="config.entity" :record="detailRecord" />
 
     <q-dialog v-model="dialog">
       <q-card class="record-dialog">
@@ -1518,7 +1502,7 @@ watch(() => [route.name, route.params.farmId, route.query.cycle], () => {
     </q-dialog>
 
     <q-dialog v-model="deleteDialog" persistent>
-      <q-card class="record-dialog delete-dialog">
+      <q-card class="record-dialog delete-dialog" :class="{ 'notification-delete-dialog': config.entity === 'notifications' }">
         <q-card-section class="dialog-heading">
           <div><div class="section-eyebrow">ACCIÓN IRREVERSIBLE</div><h2>{{ ['farms', 'lots'].includes(config.entity) ? deleteStep === 1 ? `¿Seguro que deseas eliminar este ${config.singular}?` : 'Confirma la eliminación' : 'Confirma la eliminación' }}</h2><p v-if="['farms', 'lots'].includes(config.entity)">{{ deleteStep === 1 ? 'Revisa el resumen antes de continuar.' : 'Escribe el nombre exacto para confirmar.' }}</p><p v-else>Para evitar errores, confirma escribiendo el nombre exacto:</p></div>
           <q-btn flat round icon="close" aria-label="Cerrar" @click="closeDeleteDialog" />

@@ -12,8 +12,10 @@ defineEmits(['create'])
 
 <template>
   <q-card flat bordered class="shared-empty-state">
-    <div class="shared-empty-state-emoji" aria-hidden="true">{{ emoji }}</div>
-    <strong>{{ message }}</strong>
+    <div class="shared-empty-state-heading">
+      <span class="shared-empty-state-emoji" aria-hidden="true">{{ emoji }}</span>
+      <strong>{{ message }}</strong>
+    </div>
     <p v-if="subtext">{{ subtext }}</p>
     <q-btn v-if="canCreate" rounded color="primary" unelevated no-caps icon="add" :label="createLabel" @click="$emit('create')" />
   </q-card>
@@ -34,8 +36,19 @@ defineEmits(['create'])
 }
 
 .shared-empty-state-emoji {
-  font-size: 34px;
-  line-height: 1.2;
+  flex: 0 0 auto;
+  color: var(--green-muted);
+  font-size: 20px;
+  line-height: 1;
+  filter: grayscale(1);
+  opacity: .7;
+}
+
+.shared-empty-state-heading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
 }
 
 .shared-empty-state strong {

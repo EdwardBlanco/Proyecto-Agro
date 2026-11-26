@@ -34,7 +34,6 @@ export const entityConfig = {
     columns: [['name', 'Cultivo'], ['variety', 'Variedad'], ['category', 'Categoría'], ['stages', 'Etapas fenológicas'], ['inputsLabel', 'Insumos asociados']],
     fields: [
       { key: 'name', label: 'Nombre del cultivo', required: true, maxLength: 40, textOnly: true },
-      { key: 'emoji', label: 'Emoji de referencia', type: 'emoji', default: '🌱', required: true },
       { key: 'variety', label: 'Variedad', required: true, maxLength: 40, textOnly: true },
       { key: 'category', label: 'Categoría', type: 'select', options: ['Frutal', 'Hortaliza', 'Permanente', 'Cereal', 'Otro'], required: true },
       { key: 'otherCategory', label: 'Especifica la categoría', required: true, maxLength: 40, textOnly: true, placeholder: 'Escribe la categoría del cultivo' },
@@ -128,7 +127,7 @@ export const entityConfig = {
       { key: 'message', label: 'Detalle', type: 'textarea', required: true, maxLength: 300 },
       { key: 'date', label: 'Fecha', type: 'date', required: true },
       { key: 'lotId', label: 'Lote relacionado (opcional)', type: 'ref', ...ref('lots') },
-      { key: 'status', label: 'Estado', type: 'select', options: ['Pendiente', 'Atendida', 'Archivada'], required: true }
+      { key: 'status', label: 'Estado', type: 'select', options: ['Pendiente', 'Atendida'], required: true }
     ]
   },
   users: {

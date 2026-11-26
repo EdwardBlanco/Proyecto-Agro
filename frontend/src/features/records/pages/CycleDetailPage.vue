@@ -51,7 +51,7 @@ function formatDate(value) {
 
 <template>
   <q-page v-if="cycle" class="page-content cycle-detail-page">
-    <BackButton label="Volver a ciclos" :to="{ name: 'cycles' }" />
+    <BackButton :to="{ name: 'cycles' }" />
     <div class="cycle-detail-status"><StatusBadge :status="cycle.status" /></div>
     <div class="cycle-metric-grid"><q-card flat bordered><small>Área sembrada</small><strong>{{ cycle.area !== null && cycle.area !== undefined && cycle.area !== '' ? `${Number(cycle.area).toLocaleString('es-CO', { maximumFractionDigits: 2 })} HA` : 'Sin datos registrados' }}</strong><small>HA = Hectáreas</small></q-card><q-card flat bordered><small>Meta de producción</small><strong>{{ cycle.target !== null && cycle.target !== undefined && cycle.target !== '' ? `${Number(cycle.target).toLocaleString('es-CO')} kg` : 'Sin datos registrados' }}</strong></q-card><q-card flat bordered><small>Cosecha acumulada</small><strong>{{ total.toLocaleString('es-CO') }} kg</strong></q-card><q-card flat bordered><small>Fecha de inicio</small><strong>{{ formatDate(cycle.startDate) }}</strong></q-card></div>
     <div class="cycle-related-summary">
@@ -73,8 +73,7 @@ function formatDate(value) {
         <q-separator />
         <q-list v-if="activities.length">
           <q-item v-for="item in activities" :key="item.id" class="activity-row">
-            <q-item-section avatar><q-avatar :class="item.kind === 'Incidencia' ? 'activity-incidence-avatar' : 'brand-green-tint brand-green-text'" :icon="item.kind === 'Labor' ? 'task_alt' : 'warning_amber'" /></q-item-section>
-            <q-item-section><q-item-label>{{ item.type }} · {{ item.kind }}</q-item-label><q-item-label caption>{{ item.description || 'Sin datos registrados' }} · {{ item.responsible || 'Sin datos registrados' }}</q-item-label></q-item-section>
+            <q-item-section><q-item-label><q-icon class="decorative-inline-icon" :name="item.kind === 'Labor' ? 'task_alt' : 'warning_amber'" />{{ item.type }} · {{ item.kind }}</q-item-label><q-item-label caption>{{ item.description || 'Sin datos registrados' }} · {{ item.responsible || 'Sin datos registrados' }}</q-item-label></q-item-section>
             <q-item-section side><div class="cycle-activity-side"><span>{{ formatDate(item.date) }}</span><StatusBadge v-if="item.status" :status="item.status" /></div></q-item-section>
           </q-item>
         </q-list>
@@ -87,8 +86,7 @@ function formatDate(value) {
         </q-card-section>
         <q-list v-if="harvests.length">
           <q-item v-for="item in harvests" :key="item.id">
-            <q-item-section avatar><q-icon name="agriculture" color="primary" /></q-item-section>
-            <q-item-section><q-item-label>{{ Number(item.quantity).toLocaleString('es-CO') }} {{ item.unit }} · {{ item.quality }}</q-item-label><q-item-label caption>{{ formatDate(item.date) }}</q-item-label></q-item-section>
+            <q-item-section><q-item-label><q-icon class="decorative-inline-icon" name="agriculture" />{{ Number(item.quantity).toLocaleString('es-CO') }} {{ item.unit }} · {{ item.quality }}</q-item-label><q-item-label caption>{{ formatDate(item.date) }}</q-item-label></q-item-section>
           </q-item>
         </q-list>
         <div v-else class="small-empty">No se han registrado cosechas.</div>
@@ -96,13 +94,12 @@ function formatDate(value) {
         <q-separator />
         <q-list v-if="nurseries.length">
           <q-item v-for="item in nurseries" :key="item.id">
-            <q-item-section avatar><q-icon name="spa" color="positive" /></q-item-section>
-            <q-item-section><q-item-label>{{ item.name }}</q-item-label><q-item-label caption>{{ item.germination }} % de germinación · {{ item.status }}</q-item-label></q-item-section>
+            <q-item-section><q-item-label><q-icon class="decorative-inline-icon" name="spa" />{{ item.name }}</q-item-label><q-item-label caption>{{ item.germination }} % de germinación · {{ item.status }}</q-item-label></q-item-section>
           </q-item>
         </q-list>
         <div v-else class="small-empty">No hay semilleros vinculados.</div>
       </q-card>
     </div>
   </q-page>
-  <q-page v-else class="page-content"><q-card flat bordered class="not-found"><q-icon name="search_off" /><h2>No encontramos este ciclo</h2><q-btn color="primary" unelevated no-caps label="Volver a ciclos" @click="router.push({ name: 'cycles' })" /></q-card></q-page>
+  <q-page v-else class="page-content"><BackButton :to="{ name: 'cycles' }" /><q-card flat bordered class="not-found"><h2><q-icon name="search_off" />No encontramos este ciclo</h2></q-card></q-page>
 </template>

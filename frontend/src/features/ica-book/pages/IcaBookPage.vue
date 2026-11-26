@@ -1,8 +1,7 @@
 <template>
   <q-page class="q-pa-md">
     <div v-if="!isAuthorized" class="q-pa-md text-center">
-      <q-icon name="lock" size="xl" color="negative" />
-      <div class="text-h6 q-mt-md">Acceso Restringido</div>
+      <div class="text-h6 q-mt-md"><q-icon class="decorative-inline-icon" name="lock" />Acceso Restringido</div>
       <div>No tienes permisos para ver la bitácora oficial ICA.</div>
     </div>
 

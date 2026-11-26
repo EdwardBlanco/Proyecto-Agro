@@ -39,15 +39,9 @@ async function submit() {
 <template>
   <main class="login-page">
     <section class="login-panel">
-      <div class="login-story">
-        <div class="brand">
-          <img src="/Logo_SENAgro.png" alt="SENAgro" class="login-logo" />
-        </div>
-      </div>
-
       <div class="login-form-side">
         <div class="login-form-wrap">
-          <div class="mobile-brand brand">
+          <div class="login-card-brand">
             <img src="/Logo_SENAgro.png" alt="SENAgro" class="login-logo" />
           </div>
           <p class="login-institutional-heading">Plataforma para la gestión de predios, cultivos y actividades del SENA.</p>
